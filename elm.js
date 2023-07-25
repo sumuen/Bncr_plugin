@@ -60,9 +60,9 @@ module.exports = async (s) => {
         const inputC = await s.waitInput(() => { }, 60);
         s.reply("请输入青龙面板密钥：");
         const inputD = await s.waitInput(() => { }, 60);
-        await db.set("qlHost", urlBody);
-        await db.set("ql_client_id", inputC.getMsg());
-        await db.set("ql_client_secret", inputD.getMsg());
+        await qldb.set("qlHost", urlBody);
+        await qldb.set("ql_client_id", inputC.getMsg());
+        await qldb.set("ql_client_secret", inputD.getMsg());
         //检查是否配置是否正确
         s.reply("青龙面板配置成功");
         return;
