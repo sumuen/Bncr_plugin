@@ -1,6 +1,6 @@
 /**
  * @author muzi
- * @name 提取elmck
+ * @name elmck
  * @description elmck同步青龙，查询日志（我用的🐯的）获取收益信息，禁用启用未试验，appck不是不会失效吗？UA改成自己的吧，青龙openapi参考yelc66/98MagnetDownload/main/V2P_Sync_elm_QL.js
  * @rule ^elm$
  * @rule ^(elm)([0-9]+)$
