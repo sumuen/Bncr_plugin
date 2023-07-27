@@ -1,7 +1,7 @@
 /**
  * @author muzi
- * @name elmck
- * @description elmck同步青龙，查询日志（我用的🐯的）获取收益信息，禁用启用未试验，appck不是不会失效吗？UA改成自己的吧，青龙openapi参考yelc66/98MagnetDownload/main/V2P_Sync_elm_QL.js
+ * @name 提取elmck
+ * @description elmck同步青龙，查询日志（我用的🐯的）获取收益信息，禁用启用未试验，appck不是不会失效吗？
  * @rule ^elm$
  * @rule ^(elm)([0-9]+)$
  * @rule ^elmgl$
@@ -60,9 +60,9 @@ module.exports = async (s) => {
         const inputC = await s.waitInput(() => { }, 60);
         s.reply("请输入青龙面板密钥：");
         const inputD = await s.waitInput(() => { }, 60);
-        await qldb.set("qlHost", urlBody);
-        await qldb.set("ql_client_id", inputC.getMsg());
-        await qldb.set("ql_client_secret", inputD.getMsg());
+        await db.set("qlHost", urlBody);
+        await db.set("ql_client_id", inputC.getMsg());
+        await db.set("ql_client_secret", inputD.getMsg());
         //检查是否配置是否正确
         s.reply("青龙面板配置成功");
         return;
@@ -117,21 +117,26 @@ module.exports = async (s) => {
         let userInfo = await usrDb.get(key);
 
         if (userInfo) {
-            s.reply("是否运行资产查询任务？（y/n）");
-            let userInput = await s.waitInput(() => { }, 60);
-            let runTask = userInput.getMsg();
+            if (await s.isAdmin()) {
+                s.reply("是否运行资产查询任务？（y/n）");
+                let userInput = await s.waitInput(() => { }, 60);
+                let runTask = userInput.getMsg();
 
-            let taskId = await qlsearchtask(s, "pingxingsheng_elm/ele_assest.js");
-            if (runTask != "N" && runTask != "n" && taskId) {
-                await qlruntask(s, taskId);
-                s.reply("任务运行成功,100s后查询日志");
-                await sleep(100000);
+                let taskId = await qlsearchtask(s, "pingxingsheng_elm/ele_assest.js");
+                if (runTask != "N" && runTask != "n" && taskId) {
+                    await qlruntask(s, taskId);
+                    s.reply("任务运行成功,100s后查询日志");
+                    await sleep(100000);
+                }
             }
             for (let account of userInfo.accounts) {
                 const elmck = account.elmck;
                 const username = account.username;
                 await searchlogs(s, 'pingxingsheng_elm_ele_assest_26', username);
             }
+        }
+        else {
+            s.reply("elm未绑定");
         }
     }
 
@@ -560,7 +565,13 @@ module.exports = async (s) => {
 
         // 根据父目录名和日志文件名生成日志的URL
         let url = `http://${qlHost}/open/logs/${logFileName}?path=${parentDir}`;
+        let logDateTime = logFileName.slice(0, -4); // 去除时间戳后的.log
+        let parts = logDateTime.split('-');
+        let formattedStr = parts[1] + '.' + parts[2] + ' ' + parts[3] + ':' + parts[4];
+        console.log(formattedStr); // 输出为: '07.27 14:08, 未去掉日期前的0'
 
+        // 如果你希望日期前不要有0，可以使用parseInt进行转换：
+        let formattedStrNoZero = parseInt(parts[1]) + '.' + parseInt(parts[2]) + ' ' + parts[3] + ':' + parts[4];
         console.log(`获取日志详情: ${url}`);
         const options = populateOptions(url, qlAuth);
 
@@ -588,16 +599,16 @@ module.exports = async (s) => {
                     const detailsMatch = detailRegex.exec(logContent);
                     if (detailsMatch) {
                         const details = detailsMatch[1];
-                        const leYuanBiMatch = details.match(/乐园币：(\d+)/);
-                        const currentLeYuanBiMatch = details.match(/当前乐园币：(\d+)/);
-                        const chiHuoDouMatch = details.match(/总吃货豆：(\d+)/);
-                        const balanceMatch = details.match(/余额：(\d+\.\d+)/);
+                        const leYuanBiMatch = details.match(/乐园币：(\d+|异常)/);
+                        const currentLeYuanBiMatch = details.match(/当前乐园币：(\d+|异常)/);
+                        let chiHuoDouMatch = details.match(/总吃货豆：(\d+|异常)/);
+                        let balanceMatch = details.match(/余额：(\d+\.\d+|异常)/);
 
                         if (leYuanBiMatch && currentLeYuanBiMatch && chiHuoDouMatch && balanceMatch) {
-                            let leYuanBi = leYuanBiMatch[1];
-                            let currentLeYuanBi = currentLeYuanBiMatch[1];
-                            let chiHuoDou = chiHuoDouMatch[1];
-                            let balance = balanceMatch[1];
+                            let leYuanBi = leYuanBiMatch[1] !== '异常' ? leYuanBiMatch[1] : 'N/A';
+                            let currentLeYuanBi = currentLeYuanBiMatch[1] !== '异常' ? currentLeYuanBiMatch[1] : 'N/A';
+                            let chiHuoDou = chiHuoDouMatch[1] !== '异常' ? chiHuoDouMatch[1] : 'N/A';
+                            let balance = balanceMatch[1] !== '异常' ? balanceMatch[1] : 'N/A';
 
                             accountDetails.push({
                                 accountName,
@@ -616,10 +627,24 @@ module.exports = async (s) => {
 
                 if (matchingAccount) {
                     // 如果找到了匹配的账户，就返回相关的账户详情
-                    return `账号名: ${matchingAccount.accountName}\n乐园币: ${matchingAccount.leYuanBi}\n当前乐园币: ${matchingAccount.currentLeYuanBi}\n吃货豆: ${matchingAccount.chiHuoDou}\n余额: ${matchingAccount.balance}`;
+                    return `时间：${formattedStr}\n账号名: ${matchingAccount.accountName}\n乐园币: ${matchingAccount.leYuanBi}\n当前乐园币: ${matchingAccount.currentLeYuanBi}\n吃货豆: ${matchingAccount.chiHuoDou}\n余额: ${matchingAccount.balance}`;
                 } else {
-                    // 如果没有找到匹配的账户，就返回一个错误消息或其他适当的响应
-                    return `找不到 '${username}' 的账户日志`;
+                    let userInfo = await usrDb.get(platform + ':' + userId);
+                    let existingAccount = userInfo.accounts.find(account => account.username === username);
+                    if (existingAccount) {
+                        // 如果找到了匹配的username，使用对应的cookie测试
+                        let testResult = await testCookie(s, existingAccount.elmck);
+                        if (testResult) {
+                            let taskId = await qlsearchtask(s, "pingxingsheng_elm/ele_assest.js");
+                            if (runTask != "N" && runTask != "n" && taskId) {
+                                await qlruntask(s, taskId);
+                                return `未找到日志，且${username}Cookie 有效，已运行资产查询任务，请稍后查询日志`;
+                            }
+                            return `未找到日志，且${username}Cookie 有效，但运行资产查询任务失败，废物沐`
+                        } else {
+                            return `${username}' 的Cookie已失效，建议手动进入app查看`;
+                        }
+                    }
                 }
             } else {
                 return response.body;
