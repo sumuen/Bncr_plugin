@@ -12,7 +12,9 @@
  * @admin false
  * @origin muzi
  * @disable false
+ * @cron 0 0 *\/1 * * *
  */
+//todo 定时账号有效性检测，通知失效账号，自动删除失效账号
 const got = require('got');
 const qldb = new BncrDB("elm");
 const usrDb = new BncrDB('elmDB');
@@ -67,6 +69,46 @@ module.exports = async (s) => {
         s.reply("青龙面板配置成功");
         return;
     }
+    if (platform == "cron") {
+        console.log("开始执行定时任务");
+        //定时执行cookie检测
+        let keys = await usrDb.keys();  // 获取所有的 key
+        for (let key of keys) {
+            let userInfo = await usrDb.get(key);  // 根据 key 获取对应的 value
+            for (let account of userInfo.accounts) {
+                let elmck = account.elmck;
+                // 使用 elmck 进行 testCookie 检查
+                let testResult = await testCookie(s, elmck);
+                if (!testResult) {
+                    console.log(`账号 '${account.username}' 的 Cookie 已失效`);
+                    
+                    // Split the key into platform and userId
+                    let [keyPlatform, userId] = key.split(':');
+    
+                    const senders = [
+                        {
+                            id: userId,
+                            type: 'userId',
+                        },
+                    ];
+                    senders.forEach(e => {
+                        let obj = {
+                            platform: keyPlatform,  // Use the platform extracted from the key
+                            msg: `${account.username}的cookie已失效，进入app，我的点几下`,
+                            type: 'text',
+                        };
+                        obj[e.type] = e.id;
+                        sysMethod.push(obj);
+                        console.log(userId + keyPlatform);
+                    });
+                    continue;
+                }
+            }
+        }
+        console.log("结束执行定时任务");
+        return
+    }
+    
     const input = s.getMsg();
     if (input == "elm") {
         //从elmDB中获取cookie
@@ -605,7 +647,7 @@ module.exports = async (s) => {
                         let balanceMatch = details.match(/余额：(\d+\.\d+|异常)/);
 
                         if (leYuanBiMatch && currentLeYuanBiMatch && chiHuoDouMatch && balanceMatch) {
-                            let leYuanBi = leYuanBiMatch[1] !== '异常' ? leYuanBiMatch[1] : 'N/A';
+                            let leYuanBi = leYuanBiMatch[1] !== '异常' ? leYuanBiMatch[1] : '0';
                             let currentLeYuanBi = currentLeYuanBiMatch[1] !== '异常' ? currentLeYuanBiMatch[1] : 'N/A';
                             let chiHuoDou = chiHuoDouMatch[1] !== '异常' ? chiHuoDouMatch[1] : 'N/A';
                             let balance = balanceMatch[1] !== '异常' ? balanceMatch[1] : 'N/A';
@@ -636,11 +678,11 @@ module.exports = async (s) => {
                         let testResult = await testCookie(s, existingAccount.elmck);
                         if (testResult) {
                             let taskId = await qlsearchtask(s, "pingxingsheng_elm/ele_assest.js");
-                            if (runTask != "N" && runTask != "n" && taskId) {
-                                await qlruntask(s, taskId);
-                                return `未找到日志，且${username}Cookie 有效，已运行资产查询任务，请稍后查询日志`;
-                            }
-                            return `未找到日志，且${username}Cookie 有效，但运行资产查询任务失败，废物沐`
+
+                            await qlruntask(s, taskId);
+                            return `未找到日志，且${username}Cookie 有效，已运行资产查询任务，请稍后查询日志`;
+
+
                         } else {
                             return `${username}' 的Cookie已失效，建议手动进入app查看`;
                         }
