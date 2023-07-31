@@ -1,18 +1,19 @@
 /**
  * @author muzi
- * @name 提取elmck
- * @description elmck同步青龙，查询日志（我用的🐯的）获取收益信息，禁用启用未试验，appck不是不会失效吗？
+ * @name elmck
+ * @description elmck同步青龙，查询日志（我用的🐯的）获取收益信息，设置抢券禁用启用未试验，appck不是不会失效吗？
  * @rule ^elm$
  * @rule ^(elm)([0-9]+)$
  * @rule ^elmgl$
  * @rule ^elmrz$
+ * @rule ^elmqq$
  * @rule ^(?=.*cookie2=[^;]+;)(?=.*SID=[^;]+;)(?!.*cookie2=[^;]+;.*cookie2=[^;]+;)(?!.*SID=[^;]+;.*SID=[^;]+;)
- * @version 1.0.0
+ * @version 1.0.9
  * @priority 100001
  * @admin false
  * @origin muzi
  * @disable false
- * @cron 0 0 *\/4 * * *
+ * @cron 0 0 *\/3 * * *
  */
 //todo 定时账号有效性检测，通知失效账号，自动删除失效账号
 const got = require('got');
@@ -55,6 +56,9 @@ module.exports = async (s) => {
             break;
         case "elmrz":
             elmrzFunction();
+            break;
+        case "elmqq":
+            elmqqFunction();
             break;
         default:
             searchspecificelm(param2);
@@ -166,6 +170,63 @@ module.exports = async (s) => {
             s.reply("elm未绑定");
         }
     }
+    //elmqq
+    async function elmqqFunction() {
+        await getToken(s);
+        //查找账户
+        let userInfo = await getUserInfo();
+    
+        if (userInfo) {
+            let accountList = [];
+            //只调用一次 searchenv
+            let envs = await searchenv(s, 'elmqqck');
+            // 遍历每一个账户，并获取其 elmck
+            for (let index = 0; index < userInfo.accounts.length; index++) {
+                const account = userInfo.accounts[index];
+                const elmck = account.elmck;
+                const username = account.username;
+                //使用之前获取的envs
+                let logMessage = `编号：${index}，账户：${username}, 状态：`;
+                if (envs) {
+                    let matchedEnv = envs.find((env) => env.value === elmck);
+                    if (matchedEnv) {
+                        logMessage += matchedEnv.status === 0 ? "已抢券" : "禁用";
+                    } else {
+                        logMessage += "未启用";
+                    }
+                } else {
+                    logMessage += "未启用";
+                }
+                accountList.push(logMessage);
+            }
+            s.reply("账户列表：\n" + accountList.join('\n') + '\n' + "请输入编号进行抢券设置，q退出");
+            
+            //等待用户输入编号选择账号进行操作
+            let input = await s.waitInput(() => { }, 60);
+            let accountIndex = parseInt(input.getMsg(), 10);
+            if (isNaN(accountIndex) || accountIndex < 0 || accountIndex >= userInfo.accounts.length) {
+                s.reply("输入的编号无效");
+                return;
+            }
+            let selectedAccount = userInfo.accounts[accountIndex];
+            let selectedElmck = selectedAccount.elmck;
+            //查找环境变量中是否有对应的ck
+            let matchedEnv = envs ? envs.find((env) => env.value === selectedElmck) : null;
+            if (matchedEnv) {
+                // 如果ck存在且状态为禁用，则启用之
+                if (matchedEnv.status === 1) {
+                    await enableenv(s, matchedEnv._id);
+                }
+            } else {
+                // 如果ck不存在，则添加之
+                await addenv(s, 'elmqqck', selectedElmck, selectedAccount.username);
+            }
+            s.reply(`账号${selectedAccount.username}已设置为抢券状态`);
+        } else {
+            s.reply("elm未绑定");
+        }
+    }
+    
     //searchspecificelm 
     async function searchspecificelm(param2) {
         if (param2) {
@@ -476,20 +537,20 @@ module.exports = async (s) => {
         let body = JSON.stringify([id]);
         let options = populateOptions(url, qlAuth, body);
         try {
-            console.log(`envId: ${envId}`);
+            console.log(`envId: ${id}`);
             const response = await got.put(options);
             console.log(response.body);
             let result = response.body;
             if (result.code === 200) {
-                s.reply(`启用环境变量${envId}成功`);
+                s.reply(`启用环境变量${id}成功`);
                 console.log(`启用环境变量成功`);
             } else {
-                s.reply(`启用环境变量${envId}失败`);
+                s.reply(`启用环境变量${id}失败`);
                 console.log(`启用环境变量失败`);
             }
         } catch (error) {
             console.error(error);
-            s.reply(`启用环境变量失败:${envId}+ ${error.message}`);
+            s.reply(`启用环境变量失败:${id}+ ${error.message}`);
         }
     }
     async function disableEnv(s, envId) {
@@ -585,14 +646,14 @@ module.exports = async (s) => {
                 let todayDetails = await getlogs(logKeyToday, username);
                 let yesterdayDetails = await getlogs(logKeyYesterday, username);
                 let yesterdayLeYuanBi = yesterdayDetails.leYuanBi;
-                if (!todayDetails.success){
+                if (!todayDetails.success) {
                     s.reply(todayDetails.message);
                     return;
                 }
                 logDetailsString = `时间：${todayDetails.time}\n账号名: ${todayDetails.accountName}\n今日乐园币: ${todayDetails.leYuanBi}\n昨日收益: ${yesterdayLeYuanBi}\n当前乐园币: ${todayDetails.currentLeYuanBi}\n吃货豆: ${todayDetails.chiHuoDou}\n余额: ${todayDetails.balance}`;
             } else if (logKeyToday) {
                 let todayDetails = await getlogs(logKeyToday, username);
-                if (!todayDetails.success){
+                if (!todayDetails.success) {
                     s.reply(todayDetails.message);
                     return;
                 }
@@ -727,9 +788,9 @@ module.exports = async (s) => {
                         } else {
                             return {
                                 success: false,
-                                message:  `${username}' 的Cookie已失效，建议手动进入app查看`
+                                message: `${username}' 的Cookie已失效，建议手动进入app查看`
                             }
-                           
+
                         }
                     }
                 }
