@@ -12,27 +12,56 @@
  * @admin false
  * @origin muzi
  * @disable false
- * @cron 0 0 *\/1 * * *
+ * @cron 0 0 *\/4 * * *
  */
 //todo 定时账号有效性检测，通知失效账号，自动删除失效账号
 const got = require('got');
 const qldb = new BncrDB("elm");
 const usrDb = new BncrDB('elmDB');
 const AmTool = require("../红灯区/mod/AmTool");
+const { ca } = require('date-fns/locale');
 
 
 module.exports = async (s) => {
     let qlAuth = '';
     let globalEnv = [];
+    const now = new Date();
     const qlHost = await qldb.get("qlHost");
     const ql_client_id = await qldb.get("ql_client_id");
     const ql_client_secret = await qldb.get("ql_client_secret");
     const qlSecret = 'client_id=' + ql_client_id + '&client_secret=' + ql_client_secret;
     const userId = s.getUserId();
     let platform = s.getFrom();
+    const key = platform + ':' + userId;
+    const userInfo = await usrDb.get(key);
     let param2 = await s.param(2);
     //检查是否有青龙配置
     if (!qlHost || !ql_client_id || !ql_client_secret) {
+        await configureQingLong();
+        return;
+    }
+    if (platform == "cron") {
+        await executeCronTask();
+        return
+    }
+
+    const input = s.getMsg();
+    switch (input) {
+        case "elm":
+            elmFunction();
+            break;
+        case "elmgl":
+            accountmanager(s);
+            break;
+        case "elmrz":
+            elmrzFunction();
+            break;
+        default:
+            searchspecificelm(param2);
+            break;
+    }
+
+    async function configureQingLong() {
         if (!await s.isAdmin()) {
             s.reply("未配置青龙面板，请联系管理员配置");
             return;
@@ -67,9 +96,9 @@ module.exports = async (s) => {
         await db.set("ql_client_secret", inputD.getMsg());
         //检查是否配置是否正确
         s.reply("青龙面板配置成功");
-        return;
     }
-    if (platform == "cron") {
+
+    async function executeCronTask() {
         console.log("开始执行定时任务");
         //定时执行cookie检测
         let keys = await usrDb.keys();  // 获取所有的 key
@@ -81,10 +110,10 @@ module.exports = async (s) => {
                 let testResult = await testCookie(s, elmck);
                 if (!testResult) {
                     console.log(`账号 '${account.username}' 的 Cookie 已失效`);
-                    
+
                     // Split the key into platform and userId
                     let [keyPlatform, userId] = key.split(':');
-    
+
                     const senders = [
                         {
                             id: userId,
@@ -106,11 +135,14 @@ module.exports = async (s) => {
             }
         }
         console.log("结束执行定时任务");
-        return
     }
-    
-    const input = s.getMsg();
-    if (input == "elm") {
+    //getuserinfo
+    async function getUserInfo() {
+        const key = platform + ':' + userId;
+        return await usrDb.get(key);
+    }
+    //elmfunction
+    async function elmFunction() {
         //从elmDB中获取cookie
         let elminfo = await usrDb.get(platform + ':' + userId);
         if (!elminfo) {
@@ -120,8 +152,7 @@ module.exports = async (s) => {
         let globalEnv = elminfo.elmck;
         await getToken(s);
         //查找账户
-        const key = platform + ':' + userId;
-        let userInfo = await usrDb.get(key);
+        let userInfo = await getUserInfo();
 
         if (userInfo) {
             // 遍历每一个账户，并获取其 elmck
@@ -130,33 +161,75 @@ module.exports = async (s) => {
                 const username = account.username;
                 // 使用得到的 elmck 调用 fetchUserDetail 函数
                 await fetchUserDetail(s, elmck, username);
-
             }
         } else {
             s.reply("elm未绑定");
         }
-    } else if (param2) {
-        const key = platform + ':' + userId;
-        let userInfo = await usrDb.get(key);
-        let accountList = userInfo.accounts.map((account, index) => `编号：${index}，账户：${account.username}`).join('\n');
-        let accountIndex = parseInt(param2, 10);
-        if (isNaN(accountIndex) || accountIndex < 0 || accountIndex >= userInfo.accounts.length) {
-            s.reply("输入的编号无效");
-            return;
-        }
-        //根据编号拿到对应的username，进行日志查询
-        let account = userInfo.accounts[accountIndex]; // 使用索引从账户列表中获取账户
-        let username = account.username; // 获取账户的用户名
-        await getToken(s);
-        await searchlogs(s, 'pingxingsheng_elm_ele_assest_26', username);
     }
-    else if (input == "elmgl") {
-        accountmanager(s)
-    } else if (input == "elmrz") {
-        getToken(s);
+    //searchspecificelm 
+    async function searchspecificelm(param2) {
+        if (param2) {
+            let userInfo = await getUserInfo();
+            let accountList = userInfo.accounts.map((account, index) => `编号：${index}，账户：${account.username}`).join('\n');
+            let accountIndex = parseInt(param2, 10);
+            if (isNaN(accountIndex) || accountIndex < 0 || accountIndex >= userInfo.accounts.length) {
+                s.reply("输入的编号无效");
+                return;
+            }
+            //根据编号拿到对应的username，进行日志查询
+            let account = userInfo.accounts[accountIndex]; // 使用索引从账户列表中获取账户
+            let username = account.username; // 获取账户的用户名
+            await getToken(s);
+            await searchlogs(s, 'pingxingsheng_elm_ele_assest_26', username);
+        } else {
+            let elmck = str(s);
+            // 检查 elmck 是否有效（即不为 undefined）
+            if (elmck) {
+                let username = await testCookie(s, elmck);
+                if (username) {
+                    // 从 usrDb 中获取用户信息
+                    let userInfo = await getUserInfo();
+                    // 如果数据库中没有对应用户信息，则初始化
+                    if (!userInfo) {
+                        userInfo = {
+                            accounts: [],
+                        };
+                    }
+                    // 查找账户
+                    const existingAccount = userInfo.accounts.find(account => account.elmck === elmck);
+                    // 添加到青龙中，先检查是否存在，存在则不添加
+                    await getToken(s);
+                    let envs = await searchenv(s, 'elmck');
+                    let existsInQingLong = envs.some(env => env.value == elmck);
+                    if (existingAccount && existsInQingLong) {
+                        // 如果在数据库和青龙环境变量中都存在
+                        s.reply(username + "的 cookie 已存在");
+                    } else {
+                        // 如果账户在数据库中不存在
+                        if (!existingAccount) {
+                            // 将新的 elmck 添加到用户信息中
+                            userInfo.accounts.push({ elmck, username });
+                            await usrDb.set(platform + ':' + userId, userInfo);
+                        }
+                        // 如果账户在青龙环境变量中不存在
+                        if (!existsInQingLong) {
+                            // 将新的 elmck 添加到青龙中
+                            await addenv(s, 'elmck', elmck);
+                        }
+                        // 只有在添加操作执行之后才发送添加成功的消息
+                        s.reply(username + '添加成功');
+                    }
+                } else {
+                    s.reply("提供的 cookie 无效");
+                }
+            }
+        }
+    }
+    //elmrz
+    async function elmrzFunction() {
+        await getToken(s);
         //查找账户
-        const key = platform + ':' + userId;
-        let userInfo = await usrDb.get(key);
+        let userInfo = await getUserInfo();
 
         if (userInfo) {
             if (await s.isAdmin()) {
@@ -181,55 +254,6 @@ module.exports = async (s) => {
             s.reply("elm未绑定");
         }
     }
-
-    else {
-        const elmck = str(s);
-        // 检查 elmck 是否有效（即不为 undefined）
-        if (elmck) {
-            const username = await testCookie(s, elmck);
-            if (username) {
-                // 从 usrDb 中获取用户信息
-                let userInfo = await usrDb.get(platform + ':' + userId);
-                // 如果数据库中没有对应用户信息，则初始化
-                if (!userInfo) {
-                    userInfo = {
-                        accounts: [],
-                    };
-                }
-                // 查找账户
-                const existingAccount = userInfo.accounts.find(account => account.elmck === elmck);
-                // 添加到青龙中，先检查是否存在，存在则不添加
-                await getToken(s);
-                let envs = await searchenv(s, 'elmck');
-                let existsInQingLong = envs.some(env => env.value == elmck);
-                if (existingAccount && existsInQingLong) {
-                    // 如果在数据库和青龙环境变量中都存在
-                    s.reply(username + "的 cookie 已存在");
-                } else {
-                    // 如果账户在数据库中不存在
-                    if (!existingAccount) {
-                        // 将新的 elmck 添加到用户信息中
-                        userInfo.accounts.push({ elmck, username });
-                        await usrDb.set(platform + ':' + userId, userInfo);
-                    }
-                    // 如果账户在青龙环境变量中不存在
-                    if (!existsInQingLong) {
-                        // 将新的 elmck 添加到青龙中
-                        await addenv(s, 'elmck', elmck);
-                    }
-                    // 只有在添加操作执行之后才发送添加成功的消息
-                    s.reply(username + '添加成功');
-                }
-            } else {
-                s.reply("提供的 cookie 无效");
-            }
-        }
-
-    }
-    // await getToken(s);
-    // await searchenv(s, 'elmqqck')
-    // await fetchUserDetail(s);
-    // await searchlogs(s);
     //查询青龙接口
     async function getToken() {
         console.log("正在查询青龙接口");
@@ -314,7 +338,7 @@ module.exports = async (s) => {
             const responseBody = JSON.parse(response.body);
             let username = responseBody.username;
             let phone = responseBody.mobile;
-            s.reply(`用户名：${username} 手机尾号：${(AmTool.Masking(phone, 0, 4))}`);
+            s.reply(`用户名：${username} 后四位：${(AmTool.Masking(phone, 0, 4))}`);
             console.log(response.body);
             // 检查环境变量的状态，如果它被禁用，则启用它
             let envs = await searchenv(s, "elmck");
@@ -336,15 +360,6 @@ module.exports = async (s) => {
                 console.log(error.response.body);
             }
 
-        }
-    }
-    //查询elm其他信息
-    async function performAdditionalQueries(s) {
-        for (let cookie of globalEnv) {
-            //通过cookie寻找青龙环境变量位置，然后修改青龙任务运行参数进行指定账号查询
-            await qlAssetQuery(s, cookie);
-            await sleep(2000);
-            //await fetchBalance(s, cookie);
         }
     }
     function sleep(ms) {
@@ -413,7 +428,6 @@ module.exports = async (s) => {
             s.reply(`查询青龙接口失败: ${error.message}`);
         }
     }
-
     //addenv
     async function addenv(s, envName = "elmck", envValue, remarks = "") {
         let url = `http://${qlHost}/open/envs`;
@@ -435,8 +449,6 @@ module.exports = async (s) => {
             s.reply(`添加环境变量失败: ${error.message}`);
         }
     }
-
-
     //updateenv
     async function updateenv(s, envName = "elmck", envValue) {
         let url = `http://${qlHost}/open/envs`
@@ -539,7 +551,6 @@ module.exports = async (s) => {
             s.reply(`查询青龙任务失败: ${error.message}`);
         }
     }
-
     //qlruntask
     async function qlruntask(s, taskid) {
         let url = `http://${qlHost}/open/crons/run`
@@ -561,42 +572,72 @@ module.exports = async (s) => {
     }
     //searchlogs
     async function searchlogs(s, task, username) {
+        try {
+            let today = new Date();
+            let yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            let todayStr = today.toISOString().split('T')[0];
+            let yesterdayStr = yesterday.toISOString().split('T')[0];
+            let logKeyToday = await searchLatestLog(task, todayStr);
+            let logKeyYesterday = await searchLatestLog(task, yesterdayStr);
+            let logDetailsString
+            if (logKeyToday && logKeyYesterday) {
+                let todayDetails = await getlogs(logKeyToday, username);
+                let yesterdayDetails = await getlogs(logKeyYesterday, username);
+                let yesterdayLeYuanBi = yesterdayDetails.leYuanBi;
+                if (!todayDetails.success){
+                    s.reply(todayDetails.message);
+                    return;
+                }
+                logDetailsString = `时间：${todayDetails.time}\n账号名: ${todayDetails.accountName}\n今日乐园币: ${todayDetails.leYuanBi}\n昨日收益: ${yesterdayLeYuanBi}\n当前乐园币: ${todayDetails.currentLeYuanBi}\n吃货豆: ${todayDetails.chiHuoDou}\n余额: ${todayDetails.balance}`;
+            } else if (logKeyToday) {
+                let todayDetails = await getlogs(logKeyToday, username);
+                if (!todayDetails.success){
+                    s.reply(todayDetails.message);
+                    return;
+                }
+                logDetailsString = `时间：${todayDetails.time}\n账号名: ${todayDetails.accountName}\n今日乐园币: ${todayDetails.leYuanBi}\n当前乐园币: ${todayDetails.currentLeYuanBi}\n吃货豆: ${todayDetails.chiHuoDou}\n余额: ${todayDetails.balance}`;
+            } else if (logKeyYesterday) {
+                let yesterdayDetails = await getlogs(logKeyYesterday, username);
+                logDetailsString = `今日暂无日志，昨日收益: ${yesterdayDetails.leYuanBi}`;
+            } else {
+                logDetailsString = "暂无日志信息";
+            }
+            console.log(logDetailsString);
+            s.reply(logDetailsString);
+        } catch (error) {
+            console.error(`searchlogs failed: ${error.message}`);
+            s.reply(`查询日志失败: ${error.message}`);
+            return null;
+        }
+    }
+    //searchLatestLog
+    async function searchLatestLog(task, date) {
         let url = `http://${qlHost}/open/logs`;
         let options = populateOptions(url, qlAuth);
-
         try {
             const response = await got(options);
             const data = response.body;
-
             // 查找匹配的主目录
             const matchedDir = data.data.find(d => d.key === task);
-
             if (!matchedDir) {
                 console.log(`没有找到关于 ${task} 的目录`);
                 return null;
             }
-
-            // 在主目录的 children 中找到 mtime 最大的项
-            const latestLog = matchedDir.children.reduce((latest, current) => {
+            // 在主目录的 children 中找到指定日期的最新项
+            const latestLog = matchedDir.children.filter(item => item.key.includes(date)).reduce((latest, current) => {
                 return (current.mtime > latest.mtime) ? current : latest;
             });
             // 返回最新日志的 key
             let logKey = latestLog.key;
-
-            // 获取日志详情
-            console.log(`获取日志详情: ${logKey}`);
-            const logDetails = await getlogs(s, logKey, username);
-            if (logDetails) {
-                console.log(logDetails); // 打印出日志的详情
-                s.reply(logDetails);
-            }
+            return logKey;
         } catch (error) {
             console.error(`获取日志列表失败: ${error.message}`);
             return null;
         }
     }
     //getlogs
-    async function getlogs(s, key, username) {
+    async function getlogs(key, username) {
         if (!key) {
             console.log("请提供有效的日志key");
             return null;
@@ -604,19 +645,16 @@ module.exports = async (s) => {
 
         // 从 key 中获取父目录名和日志文件名
         const [parentDir, logFileName] = key.split('/');
-
         // 根据父目录名和日志文件名生成日志的URL
         let url = `http://${qlHost}/open/logs/${logFileName}?path=${parentDir}`;
         let logDateTime = logFileName.slice(0, -4); // 去除时间戳后的.log
         let parts = logDateTime.split('-');
         let formattedStr = parts[1] + '.' + parts[2] + ' ' + parts[3] + ':' + parts[4];
         console.log(formattedStr); // 输出为: '07.27 14:08, 未去掉日期前的0'
-
         // 如果你希望日期前不要有0，可以使用parseInt进行转换：
         let formattedStrNoZero = parseInt(parts[1]) + '.' + parseInt(parts[2]) + ' ' + parts[3] + ':' + parts[4];
         console.log(`获取日志详情: ${url}`);
         const options = populateOptions(url, qlAuth);
-
         try {
             const response = await got(options);
             console.log(response.body);
@@ -624,20 +662,15 @@ module.exports = async (s) => {
             if (parentDir == 'pingxingsheng_elm_ele_assest_26') {
                 // 开始提取数据
                 const logContent = result;
-
                 const accountRegex = /开始【饿了么账号 \d+ 】 (.*) \*{9}/g;
                 let match;
                 let accountDetails = [];
-
                 // 迭代匹配所有账号
                 while ((match = accountRegex.exec(logContent)) !== null) {
                     let accountName = match[1];
-
                     // 为每个账户创建一个新的正则表达式实例
                     const accountRegex = /开始【饿了么账号 \d+ 】 (.*?) \*{9}/g;
-
                     const detailRegex = new RegExp(`开始【饿了么账号 \\d+ 】 ${accountName} \\*{9}([\\s\\S]*?)没有获取到推送 uid，不推送消息`, 'g');
-
                     const detailsMatch = detailRegex.exec(logContent);
                     if (detailsMatch) {
                         const details = detailsMatch[1];
@@ -645,13 +678,11 @@ module.exports = async (s) => {
                         const currentLeYuanBiMatch = details.match(/当前乐园币：(\d+|异常)/);
                         let chiHuoDouMatch = details.match(/总吃货豆：(\d+|异常)/);
                         let balanceMatch = details.match(/余额：(\d+\.\d+|异常)/);
-
                         if (leYuanBiMatch && currentLeYuanBiMatch && chiHuoDouMatch && balanceMatch) {
                             let leYuanBi = leYuanBiMatch[1] !== '异常' ? leYuanBiMatch[1] : '0';
                             let currentLeYuanBi = currentLeYuanBiMatch[1] !== '异常' ? currentLeYuanBiMatch[1] : 'N/A';
                             let chiHuoDou = chiHuoDouMatch[1] !== '异常' ? chiHuoDouMatch[1] : 'N/A';
                             let balance = balanceMatch[1] !== '异常' ? balanceMatch[1] : 'N/A';
-
                             accountDetails.push({
                                 accountName,
                                 leYuanBi,
@@ -668,8 +699,16 @@ module.exports = async (s) => {
                 let matchingAccount = accountDetails.find(detail => detail.accountName === username);
 
                 if (matchingAccount) {
-                    // 如果找到了匹配的账户，就返回相关的账户详情
-                    return `时间：${formattedStr}\n账号名: ${matchingAccount.accountName}\n乐园币: ${matchingAccount.leYuanBi}\n当前乐园币: ${matchingAccount.currentLeYuanBi}\n吃货豆: ${matchingAccount.chiHuoDou}\n余额: ${matchingAccount.balance}`;
+                    // 返回一个包含账户详情的对象，而不是一个字符串
+                    return {
+                        success: true,
+                        time: formattedStr,
+                        accountName: matchingAccount.accountName,
+                        leYuanBi: matchingAccount.leYuanBi,
+                        currentLeYuanBi: matchingAccount.currentLeYuanBi,
+                        chiHuoDou: matchingAccount.chiHuoDou,
+                        balance: matchingAccount.balance
+                    };
                 } else {
                     let userInfo = await usrDb.get(platform + ':' + userId);
                     let existingAccount = userInfo.accounts.find(account => account.username === username);
@@ -677,14 +716,20 @@ module.exports = async (s) => {
                         // 如果找到了匹配的username，使用对应的cookie测试
                         let testResult = await testCookie(s, existingAccount.elmck);
                         if (testResult) {
-                            let taskId = await qlsearchtask(s, "pingxingsheng_elm/ele_assest.js");
+                            //let taskId = await qlsearchtask(s, "pingxingsheng_elm/ele_assest.js");
 
-                            await qlruntask(s, taskId);
-                            return `未找到日志，且${username}Cookie 有效，已运行资产查询任务，请稍后查询日志`;
-
+                            //await qlruntask(s, taskId);
+                            return {
+                                success: false,
+                                message: `未找到日志，且${username}Cookie 有效`
+                            };
 
                         } else {
-                            return `${username}' 的Cookie已失效，建议手动进入app查看`;
+                            return {
+                                success: false,
+                                message:  `${username}' 的Cookie已失效，建议手动进入app查看`
+                            }
+                           
                         }
                     }
                 }
@@ -779,3 +824,12 @@ module.exports = async (s) => {
     // }
 
 
+// //查询elm其他信息
+// async function performAdditionalQueries(s) {
+//     for (let cookie of globalEnv) {
+//         //通过cookie寻找青龙环境变量位置，然后修改青龙任务运行参数进行指定账号查询
+//         await qlAssetQuery(s, cookie);
+//         await sleep(2000);
+//         //await fetchBalance(s, cookie);
+//     }
+//     }
