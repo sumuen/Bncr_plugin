@@ -1,44 +1,44 @@
 /**
  * @author muzi
  * @name elmck
- * @description elmck同步青龙，查询日志（我用的🐯的）获取收益信息，设置抢券禁用启用未试验，appck不是不会失效吗？
+ * @description elmck
  * @rule ^elm$
  * @rule ^(elm)([0-9]+)$
  * @rule ^elmgl$
  * @rule ^elmrz$
  * @rule ^elmqq$
+ * @rule ^qlsync$
+ * @rule ^qlconfig$
+ * @rule ^elmck$
+ * @rule ^elmcron$
  * @rule ^(?=.*cookie2=[^;]+;)(?=.*SID=[^;]+;)(?!.*cookie2=[^;]+;.*cookie2=[^;]+;)(?!.*SID=[^;]+;.*SID=[^;]+;)
  * @version 1.0.9
  * @priority 100001
  * @admin false
  * @origin muzi
  * @disable false
- * @cron 0 0 *\/3 * * *
+ * @cron 0 5 6,9,12,15,18,21 * * *
  */
-//todo 定时账号有效性检测，通知失效账号，自动删除失效账号
 const got = require('got');
 const qldb = new BncrDB("elm");
 const usrDb = new BncrDB('elmDB');
 const AmTool = require("../红灯区/mod/AmTool");
 const { ca } = require('date-fns/locale');
+const ql = require('../红灯区/mod/ql');
 
 
 module.exports = async (s) => {
-    let qlAuth = '';
     let globalEnv = [];
     const now = new Date();
-    const qlHost = await qldb.get("qlHost");
-    const ql_client_id = await qldb.get("ql_client_id");
-    const ql_client_secret = await qldb.get("ql_client_secret");
-    const qlSecret = 'client_id=' + ql_client_id + '&client_secret=' + ql_client_secret;
     const userId = s.getUserId();
     let platform = s.getFrom();
     const key = platform + ':' + userId;
     const userInfo = await usrDb.get(key);
     let param2 = await s.param(2);
+    let config
     //检查是否有青龙配置
-    if (!qlHost || !ql_client_id || !ql_client_secret) {
-        await configureQingLong();
+    if (!qldb.get("ql")) {
+        await qlinitialization();
         return;
     }
     if (platform == "cron") {
@@ -52,7 +52,7 @@ module.exports = async (s) => {
             elmFunction();
             break;
         case "elmgl":
-            accountmanager(s);
+            accountmanager();
             break;
         case "elmrz":
             elmrzFunction();
@@ -60,12 +60,239 @@ module.exports = async (s) => {
         case "elmqq":
             elmqqFunction();
             break;
+        case "qlconfig":
+            qlconfigFunction();
+            break;
+        case "qlsync":
+            qlsyncFunction();
+            break;
+        case "elmcron":
+            executeCronTask();
+            break;
+        case "elmck":
+            elmckFunction();
+            break;
         default:
             searchspecificelm(param2);
             break;
     }
+    class QLClient {
 
-    async function configureQingLong() {
+        constructor({ host, token }) {
+            this.host = host;
+            this.token = token;
+        }
+        //searchEnv
+        async searchEnv(envName = "elmck") {
+            let url = `http://${this.host}/open/envs?searchValue=${envName}`
+            let body = ``
+            let options = populateOptions(url, this.token, body);
+            try {
+                const response = await got.get(options);
+                //console.log(response.body);
+                let result = response.body;
+                if (result.code == 200) {
+                    let envs = result.data;
+                    let env = envs.filter((env) => env.name === envName);
+                    if (env.length > 0) { // 如果找到了匹配的环境变量
+                        for (let i = 0; i < env.length; i++) {
+                            await sleep(100);
+                            console.log(`${env[i].value}`);
+                            globalEnv.push(env[i]);
+                        }
+                        return env;
+                    } else {
+                        console.log(`未查询到环境变量：${envName}`);
+                        return;
+                    }
+                } else {
+                    console.log("查询环境变量失败")
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+        //addenv
+        async addEnv(envName, envValue, remarks = "",) {
+            let url = `http://${this.host}/open/envs`;
+            let param = { value: envValue, name: envName, remarks };
+            let body = JSON.stringify([param]);
+            let options = populateOptions(url, this.token, body);
+            try {
+                const response = await got.post(options);
+                let result = response.body;
+                if (result.code == 200) {
+                    console.log(`添加环境变量成功`);
+                } else {
+                    console.log(`添加环境变量失败`);
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+        //updateenv
+        async updatEnv(envName, envValue) {
+            let url = `http://${this.host}/open/envs`
+            let body = `name=${envName}&value=${envValue}`
+            let options = populateOptions(url, this.token, body);
+            try {
+                const response = await got.put(options);
+                console.log(response.body);
+                let result = response.body;
+                if (result.code == 200) {
+                    console.log(`更新环境变量成功`);
+                    return result;
+                } else {
+                    console.log(`更新环境变量失败`);
+                    return;
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+        //启用禁用env
+        async enablEnv(envId) {
+            let url = `http://${this.host}/open/envs/enable`
+            let body = JSON.stringify([envId]);
+            let options = populateOptions(url, this.token, body);
+            try {
+                console.log(`envId: ${envId}`);
+                const response = await got.put(options);
+                console.log(response.body);
+                let result = response.body;
+                if (result.code === 200) {
+                    console.log(`启用环境变量成功`);
+                } else {
+                    console.log(`启用环境变量失败`);
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+        async disableEnv(envId) {
+            let url = `http://${this.host}/open/envs/disable`;
+            let body = JSON.stringify([envId]);  // 创建一个包含 id 的数组
+            let options = populateOptions(url, this.token, body);
+            try {
+                console.log(`envId: ${envId}`);
+                const response = await got.put(options);
+                console.log(response.body);
+                let result = response.body;
+                if (result.code === 200) {
+                    console.log(`禁用环境变量成功`);
+                } else {
+                    console.log(`禁用环境变量失败`);
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+        // qlsearchtask
+        async qlsearchtask(taskName) {
+            let url = `http://${this.host}/open/crons?searchValue=${taskName}`;
+            let body = '';
+            let options = populateOptions(url, this.token, body);
+            try {
+                const response = await got.get(options);
+                let result = response.body;  // Need to parse the response body to a JavaScript object
+                if (result.code == 200) {
+                    let tasks = result.data.data; // The tasks are nested in data.data
+                    let matchingTasks = tasks.filter((task) => task.command.includes(taskName));
+                    if (matchingTasks.length > 0) { // If matching tasks are found
+                        for (let i = 0; i < matchingTasks.length; i++) {
+                            await sleep(100);
+                            console.log(`${matchingTasks[i].id}`);
+                        }
+                        return matchingTasks[0].id; // return the id of the first matching task
+                    } else {
+                        console.log(`未查询到任务：${taskName}`);
+                        return;
+                    }
+                } else {
+                    console.log("查询任务失败");
+                }
+            } catch (error) {
+                console.error(error);
+                s.reply(`查询青龙任务失败: ${error.message}`);
+            }
+        }
+        //qlruntask
+        async qlruntask(taskid) {
+            let url = `http://${this.host}/open/crons/run`
+            let body = JSON.stringify([taskid]);
+            let options = populateOptions(url, this.token, body);
+            try {
+                const response = await got.put(options);
+                console.log(response.body);
+                let result = response.body;
+                if (result.code == 200) {
+                    console.log(`运行任务成功`);
+                } else {
+                    console.log(`运行任务失败`);
+                }
+            } catch (error) {
+                console.error(error);
+                s.reply(`运行任务失败: ${error.message}`);
+            }
+        }
+        //searchLatestLog
+        async searchLatestLog(task, date) {
+            console.log(`Searching for latest log for ${task} on ${date}`);
+            let url = `http://${this.host}/open/logs`;
+            let options = populateOptions(url, this.token);
+            try {
+                const response = await got(options);
+                const data = response.body;
+                // 查找匹配的主目录
+                const matchedDir = data.dirs.find(d => d.name === task);
+                if (!matchedDir) {
+                    console.log(`没有找到关于 ${task} 的目录`);
+                    return null;
+                }
+                if (!matchedDir.files) {
+                    console.log(`目录 ${task} 中没有日志文件`);
+                    return null;
+                }
+                const latestLog = matchedDir.files.filter(filename => {
+                    return filename.includes(date);
+                }).sort((a, b) => b.mtime - a.mtime)[0];
+                console.log(`最新日志: ${latestLog}`);
+                return `${latestLog}/${task}`;
+
+            } catch (error) {
+                console.error(`获取日志列表失败: ${error.message}`);
+                return null;
+            }
+        }
+        //getlogs
+        async getlogs(key, username) {
+            if (!key) {
+                console.log("请提供有效的日志key");
+                return null;
+            }
+            const [logFileName, parentDir] = key.split('/');
+            // 根据父目录名和日志文件名生成日志的URL
+            let url = `http://${this.host}/open/logs/${parentDir}/${logFileName}`;
+            let logDateTime = key.slice(0, -4); // 去除时间戳后的.log
+            let parts = logDateTime.split('-');
+            let formattedStr = parts[1] + '.' + parts[2] + ' ' + parts[3] + ':' + parts[4];
+            console.log(formattedStr); // 输出为: '07.27 14:08, 未去掉日期前的0'
+            // 如果你希望日期前不要有0，可以使用parseInt进行转换：
+            let formattedStrNoZero = parseInt(parts[1]) + '.' + parseInt(parts[2]) + ' ' + parts[3] + ':' + parts[4];
+            console.log(`获取日志详情: ${url}`);
+            const options = populateOptions(url, this.token);
+            try {
+                const response = await got(options);
+                console.log(response.body);
+                let result = response.body.data;
+                return response.body;
+            } catch (error) {
+                console.error(`获取日志详情失败: ${error.message}`);
+                return null;
+            }
+        }
+    }
+    async function qlinitialization() {
         if (!await s.isAdmin()) {
             s.reply("未配置青龙面板，请联系管理员配置");
             return;
@@ -105,16 +332,33 @@ module.exports = async (s) => {
     async function executeCronTask() {
         console.log("开始执行定时任务");
         //定时执行cookie检测
+        config = await getqlconfig("ql");
+        const client = new QLClient(config);
         let keys = await usrDb.keys();  // 获取所有的 key
         for (let key of keys) {
             let userInfo = await usrDb.get(key);  // 根据 key 获取对应的 value
             for (let account of userInfo.accounts) {
                 let elmck = account.elmck;
-                // 使用 elmck 进行 testCookie 检查
-                let testResult = await testCookie(s, elmck);
+                // 使用 elmck 进行 testCookie 检查,如果有效则查验qlenv中是否存在，如果不存在则添加，如果存在但status为1则调用enableenv启用，
+                //如果失效则推送失效账号并调用disableenv禁用账号
+                let testResult = await testCookie(elmck);
+                if (testResult) {
+                    let envs = await client.searchEnv('elmck');
+                    let envInfo = envFindId(envs, elmck);
+                    console.log(envInfo);
+                    if (envInfo && envInfo.status === 1) {
+                        console.log("启用环境变量");
+                        await enableenv(envInfo.id);
+                    } else if (!envInfo) {
+                        console.log("添加环境变量");
+                        await addenv('elmck', elmck, account.username);
+                    }
+                }
                 if (!testResult) {
                     console.log(`账号 '${account.username}' 的 Cookie 已失效`);
-
+                    // let envs = await searchenv("elmck")
+                    // let envInfo = envFindId(envs, elmck);
+                    // await disableEnv(envInfo.id)
                     // Split the key into platform and userId
                     let [keyPlatform, userId] = key.split(':');
 
@@ -145,8 +389,22 @@ module.exports = async (s) => {
         const key = platform + ':' + userId;
         return await usrDb.get(key);
     }
+    //getqlconfig
+    async function getqlconfig(qlKey) {
+        const qlConfig = await qldb.get(qlKey);
+        const token = await qldb.get(`${qlKey}.token`);
+        return {
+            host: qlConfig.host,
+            id: qlConfig.client_id,
+            secret: qlConfig.client_secret,
+            token
+        };
+    }
     //elmfunction
     async function elmFunction() {
+        if (!s.isAdmin()) {
+            return;
+        }
         //从elmDB中获取cookie
         let elminfo = await usrDb.get(platform + ':' + userId);
         if (!elminfo) {
@@ -154,7 +412,7 @@ module.exports = async (s) => {
             return;
         }
         let globalEnv = elminfo.elmck;
-        await getToken(s);
+        //await getToken(s);
         //查找账户
         let userInfo = await getUserInfo();
 
@@ -164,7 +422,7 @@ module.exports = async (s) => {
                 const elmck = account.elmck;
                 const username = account.username;
                 // 使用得到的 elmck 调用 fetchUserDetail 函数
-                await fetchUserDetail(s, elmck, username);
+                await fetchUserDetail(elmck, username);
             }
         } else {
             s.reply("elm未绑定");
@@ -172,14 +430,15 @@ module.exports = async (s) => {
     }
     //elmqq
     async function elmqqFunction() {
-        await getToken(s);
+        //await getToken(s);
         //查找账户
         let userInfo = await getUserInfo();
-    
+
         if (userInfo) {
             let accountList = [];
-            //只调用一次 searchenv
-            let envs = await searchenv(s, 'elmqqck');
+            config = await getqlconfig("ql2");
+            const client = new QLClient(config);
+            let envs = await client.searchEnv('elmqqck');
             // 遍历每一个账户，并获取其 elmck
             for (let index = 0; index < userInfo.accounts.length; index++) {
                 const account = userInfo.accounts[index];
@@ -200,7 +459,7 @@ module.exports = async (s) => {
                 accountList.push(logMessage);
             }
             s.reply("账户列表：\n" + accountList.join('\n') + '\n' + "请输入编号进行抢券设置，q退出");
-            
+
             //等待用户输入编号选择账号进行操作
             let input = await s.waitInput(() => { }, 60);
             let accountIndex = parseInt(input.getMsg(), 10);
@@ -215,131 +474,187 @@ module.exports = async (s) => {
             if (matchedEnv) {
                 // 如果ck存在且状态为禁用，则启用之
                 if (matchedEnv.status === 1) {
-                    await enableenv(s, matchedEnv._id);
+                    await client.enablEnv(matchedEnv._id);
+                    s.reply(`账号${selectedAccount.username}已设置为抢券状态`);
+                }
+                //如果启用则禁用之
+                else {
+                    await client.disableEnv(matchedEnv._id);
+                    s.reply(`账号${selectedAccount.username}已取消抢券`)
                 }
             } else {
                 // 如果ck不存在，则添加之
-                await addenv(s, 'elmqqck', selectedElmck, selectedAccount.username);
+                await client.addEnv('elmqqck', selectedElmck, selectedAccount.username);
+                s.reply(`账号${selectedAccount.username}已设置为抢券状态`);
             }
-            s.reply(`账号${selectedAccount.username}已设置为抢券状态`);
+
         } else {
             s.reply("elm未绑定");
         }
     }
-    
     //searchspecificelm 
     async function searchspecificelm(param2) {
-        if (param2) {
-            let userInfo = await getUserInfo();
+        let elmck = str(s);
+        // 检查 elmck 是否有效（即不为 undefined）
+        if (elmck) {
+            let username = await testCookie(elmck);
+            if (username) {
+                // 从 usrDb 中获取用户信息
+                let userInfo = await getUserInfo();
+                // 如果数据库中没有对应用户信息，则初始化
+                if (!userInfo) {
+                    userInfo = {
+                        accounts: [],
+                    };
+                }
+                // 查找账户
+                const existingAccount = userInfo.accounts.find(account => account.elmck === elmck);
+                // 添加到青龙中，先检查是否存在，存在则不添加
+                //await getToken(s);
+                config = await getqlconfig("ql");
+                const client = new QLClient(config);
+                let envs = await client.searchEnv('elmck');
+                let existsInQingLong = envs.some(env => env.value == elmck);
+                if (existingAccount && existsInQingLong) {
+                    // 如果在数据库和青龙环境变量中都存在
+                    s.reply(username + "的 cookie 已存在");
+                } else {
+                    // 如果账户在数据库中不存在
+                    if (!existingAccount) {
+                        // 将新的 elmck 添加到用户信息中
+                        userInfo.accounts.push({ elmck, username });
+                        await usrDb.set(platform + ':' + userId, userInfo);
+                    }
+                    // 如果账户在青龙环境变量中不存在
+                    if (!existsInQingLong) {
+                        // 将新的 elmck 添加到青龙中
+                        await client.addEnv('elmck', elmck, username);
+                    }
+                    // 只有在添加操作执行之后才发送添加成功的消息
+                    s.reply(username + '添加成功');
+                }
+            } else {
+                s.reply("提供的 cookie 无效");
+            }
+        }
+    }
+
+    //elmck
+    async function elmckFunction() {
+        let userInfo = await getUserInfo();
+        if (!userInfo) {
+            s.reply("elm未绑定");
+            return;
+        } else {
             let accountList = userInfo.accounts.map((account, index) => `编号：${index}，账户：${account.username}`).join('\n');
-            let accountIndex = parseInt(param2, 10);
+            s.reply("elm列表\n" + accountList + '\n' + "请输入编号进行查看ck，q退出");
+            let input = await s.waitInput(() => { }, 60);
+            if (input.getMsg() == "q" || input.getMsg() == "Q") {
+                await s.reply("已退出");
+                return;
+            }
+            // 将用户输入的账号编号转换为数字
+            let accountIndex = parseInt(input.getMsg(), 10);
             if (isNaN(accountIndex) || accountIndex < 0 || accountIndex >= userInfo.accounts.length) {
                 s.reply("输入的编号无效");
                 return;
             }
-            //根据编号拿到对应的username，进行日志查询
-            let account = userInfo.accounts[accountIndex]; // 使用索引从账户列表中获取账户
-            let username = account.username; // 获取账户的用户名
-            await getToken(s);
-            await searchlogs(s, 'pingxingsheng_elm_ele_assest_26', username);
-        } else {
-            let elmck = str(s);
-            // 检查 elmck 是否有效（即不为 undefined）
-            if (elmck) {
-                let username = await testCookie(s, elmck);
-                if (username) {
-                    // 从 usrDb 中获取用户信息
-                    let userInfo = await getUserInfo();
-                    // 如果数据库中没有对应用户信息，则初始化
-                    if (!userInfo) {
-                        userInfo = {
-                            accounts: [],
-                        };
-                    }
-                    // 查找账户
-                    const existingAccount = userInfo.accounts.find(account => account.elmck === elmck);
-                    // 添加到青龙中，先检查是否存在，存在则不添加
-                    await getToken(s);
-                    let envs = await searchenv(s, 'elmck');
-                    let existsInQingLong = envs.some(env => env.value == elmck);
-                    if (existingAccount && existsInQingLong) {
-                        // 如果在数据库和青龙环境变量中都存在
-                        s.reply(username + "的 cookie 已存在");
-                    } else {
-                        // 如果账户在数据库中不存在
-                        if (!existingAccount) {
-                            // 将新的 elmck 添加到用户信息中
-                            userInfo.accounts.push({ elmck, username });
-                            await usrDb.set(platform + ':' + userId, userInfo);
-                        }
-                        // 如果账户在青龙环境变量中不存在
-                        if (!existsInQingLong) {
-                            // 将新的 elmck 添加到青龙中
-                            await addenv(s, 'elmck', elmck);
-                        }
-                        // 只有在添加操作执行之后才发送添加成功的消息
-                        s.reply(username + '添加成功');
-                    }
-                } else {
-                    s.reply("提供的 cookie 无效");
-                }
+            // 根据编号寻找对应的账号，执行输出account.elmck操作
+            let account = userInfo.accounts[accountIndex];
+            let vaild = await testCookie(account.elmck);
+            if (vaild = false) {
+                let ckmsg = await s.reply(account.elmck + "\n" + account.username + "已失效");
+                console.log("已失效" + account.elmck);
+                await s.delMsg(ckmsg, { wait: 10 });
+
+            } else {
+                let ckmsg = await s.reply(account.elmck);
+                console.log(account.elmck);
+                await s.delMsg(ckmsg, { wait: 10 });
             }
         }
     }
-    //elmrz
-    async function elmrzFunction() {
-        await getToken(s);
-        //查找账户
-        let userInfo = await getUserInfo();
+    //qlsync
+    async function qlsyncFunction(env, ql, targetql) {
+        config = await getqlconfig(ql);
+        client = new QLClient(config);
+        let envs = await client.searchEnv(env)
+        for (let env of envs) {
+            config = await getqlconfig(targetql);
+            client = new QLClient(config);
+            await addenv(env.name, env.value, env.remarks);
+        }
+    }
+    //qlconfig
+    async function qlconfigFunction() {
+        await s.isAdmin() && (async () => {
 
-        if (userInfo) {
-            if (await s.isAdmin()) {
-                s.reply("是否运行资产查询任务？（y/n）");
-                let userInput = await s.waitInput(() => { }, 60);
-                let runTask = userInput.getMsg();
-
-                let taskId = await qlsearchtask(s, "pingxingsheng_elm/ele_assest.js");
-                if (runTask != "N" && runTask != "n" && taskId) {
-                    await qlruntask(s, taskId);
-                    s.reply("任务运行成功,100s后查询日志");
-                    await sleep(100000);
+            const keys = await qldb.keys();
+            const qlkeys = keys.filter(key => !key.includes("token"));
+            const qlConfigs = [];
+            for (const key of qlkeys) {
+                const config = await getqlconfig(key);
+                qlConfigs.push(config);
+            }
+            // console.log(qlConfigs); // 所有配置数组
+            // 对象形式
+            const qls = {};
+            console.log(qlkeys)
+            qlConfigs.forEach((config, index) => {
+                qls[`ql${index}`] = {
+                    host: config.host,
+                    client_id: (AmTool.Masking(config.id, 1, 2)),
+                    client_secret: (AmTool.Masking(config.secret, 2, 3)),
+                };
+            })
+            // s.reply("ql配置\n" + JSON.stringify(qls, null, 2));
+            let output = '';
+            for (const key in qls) {
+                output += `${key}配置:\n`
+                const ql = qls[key];
+                for (const prop in ql) {
+                    output += `\u0020\u0020${prop}: ${ql[prop]}\n`;
                 }
+                output += '\n';
             }
-            for (let account of userInfo.accounts) {
-                const elmck = account.elmck;
-                const username = account.username;
-                await searchlogs(s, 'pingxingsheng_elm_ele_assest_26', username);
-            }
-        }
-        else {
-            s.reply("elm未绑定");
-        }
+            s.reply(output);
+            const qlKey = await s.waitInput(() => { }, 10) ?? s.reply('超时,已退出');
+            //config[prop] = newValue; 
+            //delete config.token;
+            //await qldb.set(qlKey, config);
+            console.log(qls);
+        })();
     }
     //查询青龙接口
     async function getToken() {
-        console.log("正在查询青龙接口");
-        //s.reply("正在查询青龙接口");
-        let url = `http://${qlHost}/open/auth/token?${qlSecret}`
-        let body = ``
-        let options = populateOptions(url, qlAuth, body);
-        console.log(url);
-        try {
-            const response = await got.get(options);
-            console.log(response.body);
-            let result = response.body;
-            if (result.code == 200) {
-                qlAuth = result.data.token;
-                ///s.reply(`查询青龙接口成功`);
-                console.log(`查询青龙接口成功`);
-            } else {
-                s.reply(`查询青龙接口失败: ${result.message}`);
-                console.log(`查询青龙接口失败: ${result.message}`);
+        const keys = await qldb.keys();
+        const qlkeys = keys.filter(key => !key.includes("token"));
+        for (const qlKey of qlkeys) {
+            const qlConfig = await qldb.get(qlKey);
+            console.log("正在查询青龙接口");
+            const { host, client_id, client_secret } = qlConfig;
+            let token
+            let url = `http://${host}/open/auth/token?client_id=${client_id}&client_secret=${client_secret}`;
+            let body = ``
+            let options = populateOptions(url, token, body);
+            console.log(url);
+            try {
+                const response = await got.get(options);
+                console.log(response.body);
+                let result = response.body;
+                if (result.code == 200) {
+                    token = result.data.token;
+                    await qldb.set(qlKey + ".token", token);
+                    console.log(`${qlKey}查询青龙接口成功`);
+                } else {
+                    console.log(`查询青龙接口失败: ${result.message}`);
+                }
+            } catch (error) {
+                console.error(error);
             }
-        } catch (error) {
-            console.error(error);
-            s.reply(`查询青龙接口失败: ${error.message}`);
         }
     }
+
     function populateOptions(url, auth, body = '') {
         let options = {
             url: url,
@@ -355,7 +670,7 @@ module.exports = async (s) => {
         return options;
     }
     //testCookie
-    async function testCookie(s, cookie) {
+    async function testCookie(cookie) {
         const options = {
             method: 'GET',
             url: 'https://restapi.ele.me/eus/v5/user_detail',
@@ -383,7 +698,7 @@ module.exports = async (s) => {
         }
     }
     //查询elm个人信息
-    async function fetchUserDetail(s, cookie, username) {
+    async function fetchUserDetail(cookie, username) {
         //s.reply("正在查询elm个人信息");
         const options = {
             method: 'GET',
@@ -394,43 +709,53 @@ module.exports = async (s) => {
                 host: 'restapi.ele.me',
             },
         };
+        config = await getqlconfig('ql');
+        const client = new QLClient(config);
         try {
             const response = await got(options);
             const responseBody = JSON.parse(response.body);
             let username = responseBody.username;
             let phone = responseBody.mobile;
-            s.reply(`用户名：${username} 后四位：${(AmTool.Masking(phone, 0, 4))}`);
+            s.reply(`${username} 后四位：${(AmTool.Masking(phone, 0, 4))}`);
             console.log(response.body);
             // 检查环境变量的状态，如果它被禁用，则启用它
-            let envs = await searchenv(s, "elmck");
+            let envs = await client.searchEnv('elmck');
+            console.log(!envs);
             let envInfo = envFindId(envs, cookie);
+            console.log(envInfo);
             if (envInfo && envInfo.status === 1) {
-                await enableEnv(s, envInfo.id);
+                console.log("启用环境变量");
+                await enableenv(envInfo.id);
+            } else if (!envInfo) {
+                console.log("添加环境变量");
+                await addenv('elmck', cookie, username);
             }
         } catch (error) {
-            const errorBody = JSON.parse(error.response.body);
-            if (errorBody.name === "UNAUTHORIZED") {
+            console.log(`catch error: ${error.message}`)
+            const errorBody = error.response.body;
+            console.log(errorBody);
+            console.log(typeof errorBody);
+            let bodyObj = JSON.parse(errorBody);
+            if (bodyObj.name === `UNAUTHORIZED`) {
                 s.reply(username + '好像过期了,进app看一下？');
                 // 禁用无效的环境变量
-                let envs = await searchenv(s, "elmck");
+                let envs = await client.searchEnv('elmck');
                 let envId = envFindId(envs, cookie);
                 if (envId) {
-                    await disableEnv(s, envId);
+                    await client.disableEnv(envId);
                 }
             } else {
                 console.log(error.response.body);
-            }
 
+            }
         }
     }
     function sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
     //accountmanager
-    async function accountmanager(s) {
-        // 从 usrDb 中获取用户信息
-        let key = platform + ':' + userId;
-        let userInfo = await usrDb.get(key);
+    async function accountmanager() {
+        let userInfo = await getUserInfo();
         if (!userInfo || !Array.isArray(userInfo.accounts)) {
             s.reply("未找到任何账户信息");
             return;
@@ -455,125 +780,6 @@ module.exports = async (s) => {
         await usrDb.set(key, userInfo);
         s.reply("删除账户成功");
     }
-    //searchenv
-    async function searchenv(s, envName = "elmck") {
-        let url = `http://${qlHost}/open/envs?searchValue=${envName}`
-        let body = ``
-        let options = populateOptions(url, qlAuth, body);
-        try {
-            const response = await got.get(options);
-            //console.log(response.body);
-            let result = response.body;
-            if (result.code == 200) {
-                let envs = result.data;
-                let env = envs.filter((env) => env.name === envName);
-                if (env.length > 0) { // 如果找到了匹配的环境变量
-                    //s.reply(`查询到${env.length}个` + envName + `环境变量`);
-                    for (let i = 0; i < env.length; i++) {
-                        await sleep(100);
-                        //s.reply(`${env[i].value}`);
-                        console.log(`${env[i].value}`);
-                        globalEnv.push(env[i]);
-                    }
-                    return env;
-                } else {
-                    //s.reply(`未查询到环境变量：${envName}`);
-                    console.log(`未查询到环境变量：${envName}`);
-                    return;
-                }
-            } else {
-                s.reply("查询环境变量失败")
-            }
-        } catch (error) {
-            console.error(error);
-            s.reply(`查询青龙接口失败: ${error.message}`);
-        }
-    }
-    //addenv
-    async function addenv(s, envName = "elmck", envValue, remarks = "") {
-        let url = `http://${qlHost}/open/envs`;
-        let param = { value: envValue, name: envName, remarks };
-        let body = JSON.stringify([param]);
-        let options = populateOptions(url, qlAuth, body);
-        try {
-            const response = await got.post(options);
-            let result = response.body;
-            if (result.code == 200) {
-                s.reply(`添加环境变量成功`);
-                console.log(`添加环境变量成功`);
-            } else {
-                s.reply(`添加环境变量失败`);
-                console.log(`添加环境变量失败`);
-            }
-        } catch (error) {
-            console.error(error);
-            s.reply(`添加环境变量失败: ${error.message}`);
-        }
-    }
-    //updateenv
-    async function updateenv(s, envName = "elmck", envValue) {
-        let url = `http://${qlHost}/open/envs`
-        let body = `name=${envName}&value=${envValue}`
-        let options = populateOptions(url, qlAuth, body);
-        try {
-            const response = await got.put(options);
-            console.log(response.body);
-            let result = response.body;
-            if (result.code == 200) {
-                s.reply(`更新环境变量成功`);
-                console.log(`更新环境变量成功`);
-            } else {
-                s.reply(`更新环境变量失败`);
-                console.log(`更新环境变量失败`);
-            }
-        } catch (error) {
-            console.error(error);
-            s.reply(`更新环境变量失败: ${error.message}`);
-        }
-    }
-    //启用禁用env
-    async function enableenv(s, id) {
-        let url = `http://${qlHost}/open/envs/enable`
-        let body = JSON.stringify([id]);
-        let options = populateOptions(url, qlAuth, body);
-        try {
-            console.log(`envId: ${id}`);
-            const response = await got.put(options);
-            console.log(response.body);
-            let result = response.body;
-            if (result.code === 200) {
-                s.reply(`启用环境变量${id}成功`);
-                console.log(`启用环境变量成功`);
-            } else {
-                s.reply(`启用环境变量${id}失败`);
-                console.log(`启用环境变量失败`);
-            }
-        } catch (error) {
-            console.error(error);
-            s.reply(`启用环境变量失败:${id}+ ${error.message}`);
-        }
-    }
-    async function disableEnv(s, envId) {
-        let url = `http://${qlHost}/open/envs/disable`;
-        let body = JSON.stringify([envId]);  // 创建一个包含 id 的数组
-        let options = populateOptions(url, qlAuth, body);
-        try {
-            console.log(`envId: ${envId}`);
-            const response = await got.put(options);
-            console.log(response.body);
-            let result = response.body;
-            if (result.code === 200) {
-                s.reply(`禁用环境变量${envId}成功`);
-                console.log(`禁用环境变量成功`);
-            } else {
-                s.reply(`禁用环境变量${envId}失败`);
-                console.log(`禁用环境变量失败`);
-            }
-        } catch (error) {
-            console.error(error);
-            s.reply(`禁用环境变量失败:${envId}+ ${error.message}`);
-        }
-    }
     function envFindId(envs, invalidCookie) {
         let invalidEnv = envs.find((env) => env.value === invalidCookie);
         if (invalidEnv) {
@@ -583,228 +789,8 @@ module.exports = async (s) => {
             return null;
         }
     }
-    // qlsearchtask
-    async function qlsearchtask(s, taskName = "pingxingsheng_elm/ele_assest.js") {
-        let url = `http://${qlHost}/open/crons?searchValue=${taskName}`;
-        let body = '';
-        let options = populateOptions(url, qlAuth, body);
-        try {
-            const response = await got.get(options);
-            let result = response.body;  // Need to parse the response body to a JavaScript object
-            if (result.code == 200) {
-                let tasks = result.data.data; // The tasks are nested in data.data
-                let matchingTasks = tasks.filter((task) => task.command.includes(taskName));
-                if (matchingTasks.length > 0) { // If matching tasks are found
-                    for (let i = 0; i < matchingTasks.length; i++) {
-                        await sleep(100);
-                        console.log(`${matchingTasks[i].id}`);
-                    }
-                    return matchingTasks[0].id; // return the id of the first matching task
-                } else {
-                    console.log(`未查询到任务：${taskName}`);
-                    return;
-                }
-            } else {
-                s.reply("查询任务失败");
-            }
-        } catch (error) {
-            console.error(error);
-            s.reply(`查询青龙任务失败: ${error.message}`);
-        }
-    }
-    //qlruntask
-    async function qlruntask(s, taskid) {
-        let url = `http://${qlHost}/open/crons/run`
-        let body = JSON.stringify([taskid]);
-        let options = populateOptions(url, qlAuth, body);
-        try {
-            const response = await got.put(options);
-            console.log(response.body);
-            let result = response.body;
-            if (result.code == 200) {
-                console.log(`运行任务成功`);
-            } else {
-                console.log(`运行任务失败`);
-            }
-        } catch (error) {
-            console.error(error);
-            s.reply(`运行任务失败: ${error.message}`);
-        }
-    }
-    //searchlogs
-    async function searchlogs(s, task, username) {
-        try {
-            let today = new Date();
-            let yesterday = new Date(today);
-            yesterday.setDate(yesterday.getDate() - 1);
-            let todayStr = today.toISOString().split('T')[0];
-            let yesterdayStr = yesterday.toISOString().split('T')[0];
-            let logKeyToday = await searchLatestLog(task, todayStr);
-            let logKeyYesterday = await searchLatestLog(task, yesterdayStr);
-            let logDetailsString
-            if (logKeyToday && logKeyYesterday) {
-                let todayDetails = await getlogs(logKeyToday, username);
-                let yesterdayDetails = await getlogs(logKeyYesterday, username);
-                let yesterdayLeYuanBi = yesterdayDetails.leYuanBi;
-                if (!todayDetails.success) {
-                    s.reply(todayDetails.message);
-                    return;
-                }
-                logDetailsString = `时间：${todayDetails.time}\n账号名: ${todayDetails.accountName}\n今日乐园币: ${todayDetails.leYuanBi}\n昨日收益: ${yesterdayLeYuanBi}\n当前乐园币: ${todayDetails.currentLeYuanBi}\n吃货豆: ${todayDetails.chiHuoDou}\n余额: ${todayDetails.balance}`;
-            } else if (logKeyToday) {
-                let todayDetails = await getlogs(logKeyToday, username);
-                if (!todayDetails.success) {
-                    s.reply(todayDetails.message);
-                    return;
-                }
-                logDetailsString = `时间：${todayDetails.time}\n账号名: ${todayDetails.accountName}\n今日乐园币: ${todayDetails.leYuanBi}\n当前乐园币: ${todayDetails.currentLeYuanBi}\n吃货豆: ${todayDetails.chiHuoDou}\n余额: ${todayDetails.balance}`;
-            } else if (logKeyYesterday) {
-                let yesterdayDetails = await getlogs(logKeyYesterday, username);
-                logDetailsString = `今日暂无日志，昨日收益: ${yesterdayDetails.leYuanBi}`;
-            } else {
-                logDetailsString = "暂无日志信息";
-            }
-            console.log(logDetailsString);
-            s.reply(logDetailsString);
-        } catch (error) {
-            console.error(`searchlogs failed: ${error.message}`);
-            s.reply(`查询日志失败: ${error.message}`);
-            return null;
-        }
-    }
-    //searchLatestLog
-    async function searchLatestLog(task, date) {
-        let url = `http://${qlHost}/open/logs`;
-        let options = populateOptions(url, qlAuth);
-        try {
-            const response = await got(options);
-            const data = response.body;
-            // 查找匹配的主目录
-            const matchedDir = data.data.find(d => d.key === task);
-            if (!matchedDir) {
-                console.log(`没有找到关于 ${task} 的目录`);
-                return null;
-            }
-            // 在主目录的 children 中找到指定日期的最新项
-            const latestLog = matchedDir.children.filter(item => item.key.includes(date)).reduce((latest, current) => {
-                return (current.mtime > latest.mtime) ? current : latest;
-            });
-            // 返回最新日志的 key
-            let logKey = latestLog.key;
-            return logKey;
-        } catch (error) {
-            console.error(`获取日志列表失败: ${error.message}`);
-            return null;
-        }
-    }
-    //getlogs
-    async function getlogs(key, username) {
-        if (!key) {
-            console.log("请提供有效的日志key");
-            return null;
-        }
 
-        // 从 key 中获取父目录名和日志文件名
-        const [parentDir, logFileName] = key.split('/');
-        // 根据父目录名和日志文件名生成日志的URL
-        let url = `http://${qlHost}/open/logs/${logFileName}?path=${parentDir}`;
-        let logDateTime = logFileName.slice(0, -4); // 去除时间戳后的.log
-        let parts = logDateTime.split('-');
-        let formattedStr = parts[1] + '.' + parts[2] + ' ' + parts[3] + ':' + parts[4];
-        console.log(formattedStr); // 输出为: '07.27 14:08, 未去掉日期前的0'
-        // 如果你希望日期前不要有0，可以使用parseInt进行转换：
-        let formattedStrNoZero = parseInt(parts[1]) + '.' + parseInt(parts[2]) + ' ' + parts[3] + ':' + parts[4];
-        console.log(`获取日志详情: ${url}`);
-        const options = populateOptions(url, qlAuth);
-        try {
-            const response = await got(options);
-            console.log(response.body);
-            let result = response.body.data;
-            if (parentDir == 'pingxingsheng_elm_ele_assest_26') {
-                // 开始提取数据
-                const logContent = result;
-                const accountRegex = /开始【饿了么账号 \d+ 】 (.*) \*{9}/g;
-                let match;
-                let accountDetails = [];
-                // 迭代匹配所有账号
-                while ((match = accountRegex.exec(logContent)) !== null) {
-                    let accountName = match[1];
-                    // 为每个账户创建一个新的正则表达式实例
-                    const accountRegex = /开始【饿了么账号 \d+ 】 (.*?) \*{9}/g;
-                    const detailRegex = new RegExp(`开始【饿了么账号 \\d+ 】 ${accountName} \\*{9}([\\s\\S]*?)没有获取到推送 uid，不推送消息`, 'g');
-                    const detailsMatch = detailRegex.exec(logContent);
-                    if (detailsMatch) {
-                        const details = detailsMatch[1];
-                        const leYuanBiMatch = details.match(/乐园币：(\d+|异常)/);
-                        const currentLeYuanBiMatch = details.match(/当前乐园币：(\d+|异常)/);
-                        let chiHuoDouMatch = details.match(/总吃货豆：(\d+|异常)/);
-                        let balanceMatch = details.match(/余额：(\d+\.\d+|异常)/);
-                        if (leYuanBiMatch && currentLeYuanBiMatch && chiHuoDouMatch && balanceMatch) {
-                            let leYuanBi = leYuanBiMatch[1] !== '异常' ? leYuanBiMatch[1] : '0';
-                            let currentLeYuanBi = currentLeYuanBiMatch[1] !== '异常' ? currentLeYuanBiMatch[1] : 'N/A';
-                            let chiHuoDou = chiHuoDouMatch[1] !== '异常' ? chiHuoDouMatch[1] : 'N/A';
-                            let balance = balanceMatch[1] !== '异常' ? balanceMatch[1] : 'N/A';
-                            accountDetails.push({
-                                accountName,
-                                leYuanBi,
-                                currentLeYuanBi,
-                                chiHuoDou,
-                                balance
-                            });
-                        }
-                    }
-                }
-
-
-                // 在 accountDetails 中查找匹配的用户名
-                let matchingAccount = accountDetails.find(detail => detail.accountName === username);
-
-                if (matchingAccount) {
-                    // 返回一个包含账户详情的对象，而不是一个字符串
-                    return {
-                        success: true,
-                        time: formattedStr,
-                        accountName: matchingAccount.accountName,
-                        leYuanBi: matchingAccount.leYuanBi,
-                        currentLeYuanBi: matchingAccount.currentLeYuanBi,
-                        chiHuoDou: matchingAccount.chiHuoDou,
-                        balance: matchingAccount.balance
-                    };
-                } else {
-                    let userInfo = await usrDb.get(platform + ':' + userId);
-                    let existingAccount = userInfo.accounts.find(account => account.username === username);
-                    if (existingAccount) {
-                        // 如果找到了匹配的username，使用对应的cookie测试
-                        let testResult = await testCookie(s, existingAccount.elmck);
-                        if (testResult) {
-                            //let taskId = await qlsearchtask(s, "pingxingsheng_elm/ele_assest.js");
-
-                            //await qlruntask(s, taskId);
-                            return {
-                                success: false,
-                                message: `未找到日志，且${username}Cookie 有效`
-                            };
-
-                        } else {
-                            return {
-                                success: false,
-                                message: `${username}' 的Cookie已失效，建议手动进入app查看`
-                            }
-
-                        }
-                    }
-                }
-            } else {
-                return response.body;
-            }
-
-        } catch (error) {
-            console.error(`获取日志详情失败: ${error.message}`);
-            return null;
-        }
-    }
-
-    function str(s) {
+    function str() {
         const str = s.getMsg();
         let sidMatch = str.match(/SID=[^;]*/);
         let cookie2Match = str.match(/cookie2=[^;]*/);
@@ -831,66 +817,4 @@ module.exports = async (s) => {
             return;
         }
     }
-
 }
-    // // 查询吃货豆信息
-    // async function fetchEatingBeans(s, cookie) {
-    //     s.reply("正在查询吃货豆信息");
-    //     const options = {
-    //         method: 'GET',
-    //         url: 'https://h5.ele.me/restapi/svip_biz/v1/supervip/foodie/records?latitude=30.153352&limit=20&longitude=104.153352&offset=0',
-    //         headers: {
-    //             Cookie: cookie,
-    //             'user-agent': 'Rajax/1 Apple/iPhone9,2 iOS/14.8.1 Eleme/11.0.8 ID/50E26F2E-64B8-46BE-887A-25F7BEB4D762; IsJailbroken/1 Mozilla/5.0 (iPhone; CPU iPhone OS 14_8_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 AliApp(ELMC/11.0.8) UT4Aplus/ltracker-0.2.30.33 WindVane/8.7.2 1242x2208 PHA/2.0.0 WK (PHATemplate)',
-    //             host: 'h5.ele.me',
-    //         },
-    //     };
-    //     try {
-    //         const response = await got(options);
-    //         const responseBody = JSON.parse(response.body);
-    //         let peaCount = responseBody.peaCount;
-    //         let recordsText = responseBody.records.slice(0, 3).map(record => `最近吃货豆收益为: ${record.count} 豆，时间: ${record.createdTime}`).join('\n');
-    //         s.reply(`吃货豆数量为: ${peaCount}\n${recordsText}`);
-    //     } catch (error) {
-    //         console.log(error.response.body);
-    //     }
-    // }
-
-    //    //余额
-    //    async function fetchBalance(s, cookie) {
-    //     s.reply("正在查询余额信息");
-
-    //     // 构造请求
-    //     const options = {
-    //         method: 'GET',
-    //         url: 'https://httpizza.ele.me/walletUserV2/storedcard/queryBalanceBycardType?cardType=platform',
-    //         headers: {
-    //             Cookie: cookie,
-    //             'user-agent': 'Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.141 Mobile Safari/537.36',
-    //             host: 'httpizza.ele.me',
-    //         },
-    //     };
-
-    //     try {
-    //         const response = await got(options);
-    //         const responseBody = JSON.parse(response.body);
-    //         console.log(responseBody)
-    //         // 输出余额
-    //         let totalAmount = responseBody.data.totalAmount / 100;
-    //         s.reply(`余额为: ${totalAmount} 元`);
-
-    //     } catch (error) {
-    //         console.log(error.response.body);
-    //     }
-    // }
-
-
-// //查询elm其他信息
-// async function performAdditionalQueries(s) {
-//     for (let cookie of globalEnv) {
-//         //通过cookie寻找青龙环境变量位置，然后修改青龙任务运行参数进行指定账号查询
-//         await qlAssetQuery(s, cookie);
-//         await sleep(2000);
-//         //await fetchBalance(s, cookie);
-//     }
-//     }

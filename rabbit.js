@@ -1,6 +1,7 @@
 /**
  * @name HW-Qrabbit短信登录
  * @rule ^短信(登录|登陆)$
+ * @rule ^(登录|登陆)$
  * @author HermanWu
  * @origin HW
  * @version v1.0.0
@@ -159,19 +160,16 @@ module.exports = async (s) => {
                 "Form": platform,
                 "ID": userId,
                 "Name": "",
-                "NotifyCode": {}
             }
-            value.NotifyCode[pin] = 1
         } else {
             console.log(typeof value, value)
             const pins = value["Pin"] || [];
             if (pins.indexOf(pin) === -1) {
                 pins.push(pin);
                 value["Pin"] = pins; // Assign pins back to value["Pin"]
-                value.NotifyCode[pin] = 1;
             }
         }
-        pinDB.set(platform + ":" + userId, JSON.stringify(value))
+        pinDB.set(platform + ":" + userId, value)
         s.reply(`【${pin}】登陆成功`)
         return true
     }
