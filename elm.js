@@ -8,33 +8,34 @@
  * @rule ^elmrz$
  * @rule ^elmqq$
  * @rule ^qlsync$
+ * @rule ^getoken$
  * @rule ^qlconfig$
  * @rule ^elmck$
  * @rule ^elmcron$
+ * @rule ^migrateData$
  * @rule ^(?=.*cookie2=[^;]+;)(?=.*SID=[^;]+;)(?!.*cookie2=[^;]+;.*cookie2=[^;]+;)(?!.*SID=[^;]+;.*SID=[^;]+;)
  * @version 1.0.9
  * @priority 100001
  * @admin false
  * @origin muzi
  * @disable false
- * @cron 0 5 6,9,12,15,18,21 * * *
+ * @cron 0 * 6,9,12,15,18,19,21 * * *
  */
+const validator = require("validator")
 const got = require('got');
+const agent = require("global-agent")
 const qldb = new BncrDB("elm");
 const usrDb = new BncrDB('elmDB');
 const AmTool = require("../红灯区/mod/AmTool");
-const { ca } = require('date-fns/locale');
 const ql = require('../红灯区/mod/ql');
 
 
 module.exports = async (s) => {
+    agent.bootstrap.HTTP_PROXY = "http://192.168.3.10:8080";
     let globalEnv = [];
-    const now = new Date();
     const userId = s.getUserId();
     let platform = s.getFrom();
     const key = platform + ':' + userId;
-    const userInfo = await usrDb.get(key);
-    let param2 = await s.param(2);
     let config
     //检查是否有青龙配置
     if (!qldb.get("ql")) {
@@ -54,17 +55,14 @@ module.exports = async (s) => {
         case "elmgl":
             accountmanager();
             break;
-        case "elmrz":
-            elmrzFunction();
-            break;
         case "elmqq":
-            elmqqFunction();
+            newelmqqFunction();
             break;
         case "qlconfig":
             qlconfigFunction();
             break;
         case "qlsync":
-            qlsyncFunction();
+            qlsyncFunction("elmqqck", "ql0", "ql1");
             break;
         case "elmcron":
             executeCronTask();
@@ -72,8 +70,14 @@ module.exports = async (s) => {
         case "elmck":
             elmckFunction();
             break;
+        case "getoken":
+            getToken();
+            break;
+        case "migrateData":
+            migrateData();
+            break;
         default:
-            searchspecificelm(param2);
+            searchspecificelm();
             break;
     }
     class QLClient {
@@ -322,9 +326,11 @@ module.exports = async (s) => {
         const inputC = await s.waitInput(() => { }, 60);
         s.reply("请输入青龙面板密钥：");
         const inputD = await s.waitInput(() => { }, 60);
-        await db.set("qlHost", urlBody);
-        await db.set("ql_client_id", inputC.getMsg());
-        await db.set("ql_client_secret", inputD.getMsg());
+        let ql = {}
+        ql.host = urlBody;
+        ql.id = inputC.getMsg();
+        ql.secret = inputD.getMsg();
+        await qldb.set("ql", ql);
         //检查是否配置是否正确
         s.reply("青龙面板配置成功");
     }
@@ -332,7 +338,8 @@ module.exports = async (s) => {
     async function executeCronTask() {
         console.log("开始执行定时任务");
         //定时执行cookie检测
-        config = await getqlconfig("ql");
+        config = await getqlconfig("1697731480559");
+        console.log(config);
         const client = new QLClient(config);
         let keys = await usrDb.keys();  // 获取所有的 key
         for (let key of keys) {
@@ -341,33 +348,29 @@ module.exports = async (s) => {
                 let elmck = account.elmck;
                 // 使用 elmck 进行 testCookie 检查,如果有效则查验qlenv中是否存在，如果不存在则添加，如果存在但status为1则调用enableenv启用，
                 //如果失效则推送失效账号并调用disableenv禁用账号
-                let testResult = await testCookie(elmck);
-                if (testResult) {
+                let responseBody = await testCookie(elmck);
+                let [keyPlatform, userId] = key.split(':');
+                const senders = [
+                    {
+                        id: userId,
+                        type: 'userId',
+                    },
+                ];
+                if (responseBody) {
                     let envs = await client.searchEnv('elmck');
                     let envInfo = envFindId(envs, elmck);
-                    console.log(envInfo);
+                    //console.log(envInfo);
+                    console.log(`${userId}+${responseBody.mobile}`)
                     if (envInfo && envInfo.status === 1) {
                         console.log("启用环境变量");
                         await enableenv(envInfo.id);
                     } else if (!envInfo) {
                         console.log("添加环境变量");
-                        await addenv('elmck', elmck, account.username);
+                        await client.addEnv('elmck', elmck, account.username);
                     }
                 }
-                if (!testResult) {
+                if (!responseBody) {
                     console.log(`账号 '${account.username}' 的 Cookie 已失效`);
-                    // let envs = await searchenv("elmck")
-                    // let envInfo = envFindId(envs, elmck);
-                    // await disableEnv(envInfo.id)
-                    // Split the key into platform and userId
-                    let [keyPlatform, userId] = key.split(':');
-
-                    const senders = [
-                        {
-                            id: userId,
-                            type: 'userId',
-                        },
-                    ];
                     senders.forEach(e => {
                         let obj = {
                             platform: keyPlatform,  // Use the platform extracted from the key
@@ -390,32 +393,32 @@ module.exports = async (s) => {
         return await usrDb.get(key);
     }
     //getqlconfig
-    async function getqlconfig(qlKey) {
-        const qlConfig = await qldb.get(qlKey);
-        const token = await qldb.get(`${qlKey}.token`);
-        return {
-            host: qlConfig.host,
-            id: qlConfig.client_id,
-            secret: qlConfig.client_secret,
-            token
-        };
+    async function getqlconfig(qlname) {
+        const qlConfigs = await qldb.get('ql');
+        console.log(qlConfigs);
+
+        // 根据name查询对应的青龙配置
+        const qlConfig = qlConfigs.find(config => config.name === qlname);
+        if (!qlConfig) {
+            console.log(`未找到青龙配置：${qlname}`);
+            return null;
+        }
+        // 返回该青龙配置
+        return qlConfig;
     }
     //elmfunction
     async function elmFunction() {
-        if (!s.isAdmin()) {
-            return;
-        }
+        // if (!s.isAdmin()) {
+        //     return;
+        // }
         //从elmDB中获取cookie
         let elminfo = await usrDb.get(platform + ':' + userId);
         if (!elminfo) {
             s.reply("未绑定elm账号，请直接发送elmck");
             return;
         }
-        let globalEnv = elminfo.elmck;
-        //await getToken(s);
         //查找账户
         let userInfo = await getUserInfo();
-
         if (userInfo) {
             // 遍历每一个账户，并获取其 elmck
             for (let account of userInfo.accounts) {
@@ -430,75 +433,175 @@ module.exports = async (s) => {
     }
     //elmqq
     async function elmqqFunction() {
-        //await getToken(s);
         //查找账户
         let userInfo = await getUserInfo();
 
         if (userInfo) {
             let accountList = [];
-            config = await getqlconfig("ql2");
-            const client = new QLClient(config);
-            let envs = await client.searchEnv('elmqqck');
-            // 遍历每一个账户，并获取其 elmck
-            for (let index = 0; index < userInfo.accounts.length; index++) {
-                const account = userInfo.accounts[index];
-                const elmck = account.elmck;
-                const username = account.username;
-                //使用之前获取的envs
-                let logMessage = `编号：${index}，账户：${username}, 状态：`;
-                if (envs) {
-                    let matchedEnv = envs.find((env) => env.value === elmck);
-                    if (matchedEnv) {
-                        logMessage += matchedEnv.status === 0 ? "已抢券" : "禁用";
-                    } else {
-                        logMessage += "未启用";
+            //获取抢券容器
+            let qlNames = await getSpecificQLnames("elmqq");
+            if (qlNames) {
+                for (const qlName of qlNames) {
+                    const config = await getqlconfig(qlName);
+                    const client = new QLClient(config);
+                    let envs = await client.searchEnv('elmqqck');
+                    // 遍历每一个账户，并获取其 elmck
+                    for (let index = 0; index < userInfo.accounts.length; index++) {
+                        const account = userInfo.accounts[index];
+                        const elmck = account.elmck;
+                        const username = account.username;
+                        //使用之前获取的envs
+                        let logMessage = `编号：${index}，账户：${username}, 状态：`;
+                        if (envs) {
+                            let matchedEnv = envs.find((env) => env.value === elmck);
+                            if (matchedEnv) {
+                                logMessage += matchedEnv.status === 0 ? "已抢券" : "禁用";
+                            } else {
+                                logMessage += "未启用";
+                            }
+                        } else {
+                            logMessage += "未启用";
+                        }
+                        accountList.push(logMessage);
                     }
-                } else {
-                    logMessage += "未启用";
-                }
-                accountList.push(logMessage);
-            }
-            s.reply("账户列表：\n" + accountList.join('\n') + '\n' + "请输入编号进行抢券设置，q退出");
+                    s.reply("账户列表：\n" + accountList.join('\n') + '\n' + "请输入编号进行抢券设置，q退出");
 
-            //等待用户输入编号选择账号进行操作
-            let input = await s.waitInput(() => { }, 60);
-            let accountIndex = parseInt(input.getMsg(), 10);
-            if (isNaN(accountIndex) || accountIndex < 0 || accountIndex >= userInfo.accounts.length) {
-                s.reply("输入的编号无效");
-                return;
-            }
-            let selectedAccount = userInfo.accounts[accountIndex];
-            let selectedElmck = selectedAccount.elmck;
-            //查找环境变量中是否有对应的ck
-            let matchedEnv = envs ? envs.find((env) => env.value === selectedElmck) : null;
-            if (matchedEnv) {
-                // 如果ck存在且状态为禁用，则启用之
-                if (matchedEnv.status === 1) {
-                    await client.enablEnv(matchedEnv._id);
-                    s.reply(`账号${selectedAccount.username}已设置为抢券状态`);
-                }
-                //如果启用则禁用之
-                else {
-                    await client.disableEnv(matchedEnv._id);
-                    s.reply(`账号${selectedAccount.username}已取消抢券`)
+                    //等待用户输入编号选择账号进行操作
+                    let input = await s.waitInput(() => { }, 60);
+                    let accountIndex = parseInt(input.getMsg(), 10);
+                    if (isNaN(accountIndex) || accountIndex < 0 || accountIndex >= userInfo.accounts.length) {
+                        s.reply("输入的编号无效");
+                        return;
+                    }
+                    let selectedAccount = userInfo.accounts[accountIndex];
+                    let selectedElmck = selectedAccount.elmck;
+                    //查找环境变量中是否有对应的ck
+                    let matchedEnv = envs ? envs.find((env) => env.value === selectedElmck) : null;
+                    if (matchedEnv) {
+                        // 如果ck存在且状态为禁用，则启用之
+                        if (matchedEnv.status === 1) {
+                            await client.enablEnv(matchedEnv._id);
+                            s.reply(`账号${selectedAccount.username}已设置为抢券状态`);
+                        }
+                        //如果启用则禁用之
+                        else {
+                            await client.disableEnv(matchedEnv._id);
+                            s.reply(`账号${selectedAccount.username}已取消抢券`)
+                        }
+                    } else {
+                        // 如果ck不存在，则添加之
+                        await client.addEnv('elmqqck', selectedElmck, selectedAccount.username);
+                        s.reply(`账号${selectedAccount.username}已设置为抢券状态`);
+                    }
                 }
             } else {
-                // 如果ck不存在，则添加之
-                await client.addEnv('elmqqck', selectedElmck, selectedAccount.username);
-                s.reply(`账号${selectedAccount.username}已设置为抢券状态`);
+                // 没有找到任何配置
+                s.reply("没有找到抢券的容器");
             }
-
         } else {
             s.reply("elm未绑定");
         }
     }
+    //newelmqq
+    async function newelmqqFunction() {
+        //查找账户
+        let userInfo = await getUserInfo();
+
+        if (userInfo) {
+            //获取抢券容器
+            let qlNames = await getSpecificQLnames("elmqq");
+            const allEnvs = await getAllEnvsFromQLs(qlNames);
+            const mergedEnvs = mergeAndDeduplicateEnvs(allEnvs);
+            await supplementEnvs(allEnvs, mergedEnvs);
+            const accountList = generateAccountListFromMergedEnvs(mergedEnvs);
+            s.reply("账户列表：\n" + accountList + '\n' + "请输入编号进行抢券设置，q退出");
+            for (const qlName of qlNames) {
+                const config = await getqlconfig(qlName);
+                const client = new QLClient(config);
+                let envs = await client.searchEnv('elmqqck');
+                let matchedEnv = envs ? envs.find((env) => env.value === selectedElmck) : null;
+        
+                if (matchedEnv) {
+                    // 如果ck存在且状态为禁用，则启用之
+                    if (matchedEnv.status === 1) {
+                        await client.enablEnv(matchedEnv._id);
+                    }
+                    // 如果ck存在且状态为启用，则禁用之
+                    else {
+                        await client.disableEnv(matchedEnv._id);
+                    }
+                } else {
+                    // 如果ck不存在，则添加之
+                    await client.addEnv('elmqqck', selectedElmck, selectedAccount.username);
+                }
+            }
+        
+            s.reply(`账号${selectedAccount.username}的设置已更新`);
+        }
+
+    }
+    //getAllEnvsFromQLs
+    async function getAllEnvsFromQLs(qlNames) {
+        let allEnvs = [];
+        for (const qlName of qlNames) {
+            const config = await getqlconfig(qlName);
+            const client = new QLClient(config);
+            const envs = await client.searchEnv('elmqqck');
+            allEnvs.push({ client, envs });
+        }
+        return allEnvs;
+    }
+    // 合并并去重所有容器的envs
+    function mergeAndDeduplicateEnvs(allEnvs) {
+        let merged = [];
+        for (const { envs } of allEnvs) {
+            for (const env of envs) {
+                if (!merged.some(e => e.value === env.value)) {
+                    merged.push(env);
+                }
+            }
+        }
+        return merged;
+    }
+    // 补齐不足的envs
+    async function supplementEnvs(allEnvs, mergedEnvs) {
+        for (const { client, envs } of allEnvs) {
+            for (const mergedEnv of mergedEnvs) {
+                if (!envs.some(e => e.value === mergedEnv.value)) {
+                    await client.addEnv('elmqqck', mergedEnv.value, mergedEnv.name);
+                }
+            }
+        }
+    }
+    // 根据总的合并后的envs生成账户列表
+    function generateAccountListFromMergedEnvs(mergedEnvs) {
+        return mergedEnvs.map((env, index) => `编号：${index}，账户：${env.remarks}, 状态：${env.status === 0 ? "已抢券" : "禁用"}`).join('\n');
+    }
+    // 获取特定青龙配置
+    async function getSpecificQLnames(Specificdata = "host") {
+        const qlConfigs = await qldb.get('ql');
+        let qlnames = [];
+
+        // 遍历每一个青龙配置
+        for (const qlConfig of qlConfigs) {
+            // 如果该青龙配置中存在Specificdata属性
+            if (qlConfig[Specificdata]) {
+                qlnames.push(qlConfig.name);
+            }
+        }
+
+        console.log(qlnames);  // 打印结果
+        return qlnames.length > 0 ? qlnames : null;
+    }
+
     //searchspecificelm 
-    async function searchspecificelm(param2) {
+    async function searchspecificelm(s) {
         let elmck = str(s);
         // 检查 elmck 是否有效（即不为 undefined）
         if (elmck) {
-            let username = await testCookie(elmck);
-            if (username) {
+            let responseBody = await testCookie(elmck);
+            let username = responseBody.username
+            if (responseBody) {
                 // 从 usrDb 中获取用户信息
                 let userInfo = await getUserInfo();
                 // 如果数据库中没有对应用户信息，则初始化
@@ -510,27 +613,44 @@ module.exports = async (s) => {
                 // 查找账户
                 const existingAccount = userInfo.accounts.find(account => account.elmck === elmck);
                 // 添加到青龙中，先检查是否存在，存在则不添加
-                //await getToken(s);
-                config = await getqlconfig("ql");
-                const client = new QLClient(config);
-                let envs = await client.searchEnv('elmck');
-                let existsInQingLong = envs.some(env => env.value == elmck);
-                if (existingAccount && existsInQingLong) {
-                    // 如果在数据库和青龙环境变量中都存在
+                // 获取ql下的所有容器
+                const containers = await qldb.get("ql");
+
+                if (!containers || !Array.isArray(containers)) {
+                    console.error("No containers found or invalid format");
+                    return;
+                }
+
+                let isExistingInAnyContainer = false;
+                let isAddedInAnyContainer = false;
+
+                for (const container of containers) {
+                    const client = new QLClient(container);
+
+                    let envs = await client.searchEnv('elmck');
+                    let existsInQingLong = envs.some(env => env.value == elmck);
+
+                    if (existingAccount && existsInQingLong) {
+                        isExistingInAnyContainer = true;
+                    } else {
+                        // 如果账户在数据库中不存在
+                        if (!existingAccount) {
+                            // 将新的 elmck 添加到用户信息中
+                            userInfo.accounts.push({ elmck, username });
+                            await usrDb.set(platform + ':' + userId, userInfo);
+                        }
+                        // 如果账户在青龙环境变量中不存在
+                        if (!existsInQingLong) {
+                            // 将新的 elmck 添加到青龙中
+                            await client.addEnv('elmck', elmck, username);
+                            isAddedInAnyContainer = true;
+                        }
+                    }
+                }
+
+                if (isExistingInAnyContainer) {
                     s.reply(username + "的 cookie 已存在");
-                } else {
-                    // 如果账户在数据库中不存在
-                    if (!existingAccount) {
-                        // 将新的 elmck 添加到用户信息中
-                        userInfo.accounts.push({ elmck, username });
-                        await usrDb.set(platform + ':' + userId, userInfo);
-                    }
-                    // 如果账户在青龙环境变量中不存在
-                    if (!existsInQingLong) {
-                        // 将新的 elmck 添加到青龙中
-                        await client.addEnv('elmck', elmck, username);
-                    }
-                    // 只有在添加操作执行之后才发送添加成功的消息
+                } else if (isAddedInAnyContainer) {
                     s.reply(username + '添加成功');
                 }
             } else {
@@ -562,7 +682,7 @@ module.exports = async (s) => {
             // 根据编号寻找对应的账号，执行输出account.elmck操作
             let account = userInfo.accounts[accountIndex];
             let vaild = await testCookie(account.elmck);
-            if (vaild = false) {
+            if (!vaild) {
                 let ckmsg = await s.reply(account.elmck + "\n" + account.username + "已失效");
                 console.log("已失效" + account.elmck);
                 await s.delMsg(ckmsg, { wait: 10 });
@@ -577,75 +697,224 @@ module.exports = async (s) => {
     //qlsync
     async function qlsyncFunction(env, ql, targetql) {
         config = await getqlconfig(ql);
-        client = new QLClient(config);
+        let client = new QLClient(config);
         let envs = await client.searchEnv(env)
         for (let env of envs) {
             config = await getqlconfig(targetql);
             client = new QLClient(config);
-            await addenv(env.name, env.value, env.remarks);
+            await client.addEnv(env.name, env.value, env.remarks);
         }
     }
     //qlconfig
     async function qlconfigFunction() {
         await s.isAdmin() && (async () => {
+            while (true) {
+                let qlConfigs = await qldb.get('ql') || [];
 
-            const keys = await qldb.keys();
-            const qlkeys = keys.filter(key => !key.includes("token"));
-            const qlConfigs = [];
-            for (const key of qlkeys) {
-                const config = await getqlconfig(key);
-                qlConfigs.push(config);
-            }
-            // console.log(qlConfigs); // 所有配置数组
-            // 对象形式
-            const qls = {};
-            console.log(qlkeys)
-            qlConfigs.forEach((config, index) => {
-                qls[`ql${index}`] = {
-                    host: config.host,
-                    client_id: (AmTool.Masking(config.id, 1, 2)),
-                    client_secret: (AmTool.Masking(config.secret, 2, 3)),
-                };
-            })
-            // s.reply("ql配置\n" + JSON.stringify(qls, null, 2));
-            let output = '';
-            for (const key in qls) {
-                output += `${key}配置:\n`
-                const ql = qls[key];
-                for (const prop in ql) {
-                    output += `\u0020\u0020${prop}: ${ql[prop]}\n`;
+                // 排序
+                const sortedConfigs = qlConfigs.sort((a, b) => Number(a.name) - Number(b.name));
+                // 对象形式
+                const qls = {};
+                let elmqqql = "";
+                sortedConfigs.forEach((config, index) => {
+                    if (config.elmqq) {
+                        elmqqql += `ql${index} `;
+                    }
+                    qls[`ql${index}`] = {
+                        host: config.host,
+                        id: (AmTool.Masking(config.id, 2, 3)),
+                        secret: (AmTool.Masking(config.secret, 2, 3)),
+                    };
+                });
+                console.log(qls);
+                let output = '';
+                for (const key in qls) {
+                    output += `${key}配置:\n`
+                    const ql = qls[key];
+                    for (const prop in ql) {
+                        output += `\u0020\u0020${prop}: ${ql[prop]}\n`;
+                    }
+                    output += '\n';
                 }
-                output += '\n';
+                s.reply(`面板管理\n0增加，-删除，q退出，wq保存退出\n输入q退出${output}+\na.elmqq容器：${elmqqql}`);
+                const option = await s.waitInput(() => { }, 20) ?? s.reply('超时,已退出');
+                if (option.getMsg() == "q" || option.getMsg() == "Q") {
+                    await s.reply("已退出");
+                    return;
+                }
+                const optionstr = option.getMsg();
+                console.log(optionstr)
+                if (optionstr == "+") {
+                    s.reply("please enter host");
+                    let inputA = await s.waitInput(() => { }, 30) ?? s.reply('超时,已退出')
+                    if (!validator.isURL(inputA.getMsg())) {
+                        s.reply(`${inputA.getMsg()}这他妈叫host啊`)
+                    } else {
+                        let qlhost = inputA.getMsg()
+                        const urlRegEx = /^https?:\/\/([a-zA-Z0-9-.]+(:[0-9]{1,5})?)(\/)?$/;
+                        if (urlRegEx.test(qlhost)) {
+                            // 提取URL主体部分
+                            let match = qlhost.match(urlRegEx);
+                            qlhost = match[1];
+                            s.reply(`please enter id`)
+                            let inputB = await s.waitInput(() => { }, 30) ?? s.reply('超时,已退出')
+                            let id = inputB.getMsg()
+                            if (id.length > 32) {
+                                s.reply(`${id}这他妈叫id啊`)
+                            }
+                            s.reply(`please enter secret`)
+                            let inputC = await s.waitInput(() => { }, 30) ?? s.reply('超时,已退出')
+                            let secret = inputC.getMsg()
+                            if (secret.length > 32) {
+                                s.reply(`${secret}这他妈叫secret啊`)
+                            }
+                            let ql = {
+                                host: qlhost,
+                                id: id,
+                                secret: secret,
+                                name: Date.now().toString(),
+                                elmqq: false
+                            }
+                            qlConfigs.push(ql);  // 把新容器添加到数组中
+                            await qldb.set('ql', qlConfigs);  // 把修改后的容器列表写回到数据库中
+                            s.reply(`ql${qlConfigs.length - 1}已添加${qlhost}`);
+                        }
+                    }
+                }
+                else if (optionstr == "-") {
+                    s.reply("请输入要删除的容器编号");
+                    let input = await s.waitInput(() => { }, 20) ?? s.reply('超时,已退出');
+                    let inputstr = input.getMsg();
+                    if (inputstr == "q" || inputstr == "Q") {
+                        await s.reply("已退出");
+                    }
+                    let inputnum = parseInt(inputstr, 10);
+                    if (isNaN(inputnum) || inputnum < 0 || inputnum >= qlConfigs.length) {
+                        s.reply("输入的编号无效");
+                    }
+                    qlConfigs.splice(inputnum, 1);  // 从数组中移除容器
+                    await qldb.set('ql', qlConfigs);  // 把修改后的容器列表写回到数据库中
+
+                    s.reply(`ql${inputnum}已删除`);
+                }
+                //如果输入的为数字且大于0且小于qlkeys.length，则对数据库内对应的青龙进行操作
+                else if (!isNaN(optionstr) && optionstr >= 0 && optionstr < qlConfigs.length) {
+                    //输出对应青龙的配置
+                    let qlConfig = qlConfigs[optionstr];
+                    let output = '';
+                    for (let prop in qlConfig) {
+                        output += `${prop}: ${qlConfig[prop]}\n`;
+                    }
+                    s.reply(`ql${optionstr}配置:\n${output}`);
+                    s.reply("请输入要修改的配置项，host，id，secret，q退出");
+                    let input = await s.waitInput(() => { }, 20) ?? s.reply('超时,已退出');
+                    let inputstr = input.getMsg();
+                    if (inputstr == "q" || inputstr == "Q") {
+                        await s.reply("已退出");
+                    }
+                    if (inputstr == "host") {
+                        s.reply("请输入host");
+                        let inputA = await s.waitInput(() => { }, 20) ?? s.reply('超时,已退出');
+                        let inputstrA = inputA.getMsg();
+                        if (validator.isURL(inputstrA)) {
+                            // 提取URL主体部分
+                            let match = inputstrA.match(urlRegEx);
+                            qlConfig.host = match[1];
+                            await qldb.set('ql', qlConfigs);
+                            s.reply(`ql${optionstr}host已修改为${qlConfig.host}`);
+                        } else {
+                            s.reply(`${inputstrA}这他妈叫host啊`)
+                        }
+                    }
+                    else if (inputstr == "id") {
+                        s.reply("请输入id");
+                        let inputB = await s.waitInput(() => { }, 20) ?? s.reply('超时,已退出');
+                        let inputstrB = inputB.getMsg();
+                        if (inputstrB.length > 32) {
+                            s.reply(`${inputstrB}这他妈叫id啊`)
+                        } else {
+                            qlConfig.id = inputstrB;
+                            await qldb.set('ql', qlConfigs);
+                            s.reply(`ql${optionstr}id已修改为${qlConfig.id}`);
+                        }
+                    }
+                    else if (inputstr == "secret") {
+                        s.reply("请输入secret");
+                        let inputC = await s.waitInput(() => { }, 20) ?? s.reply('超时,已退出');
+                        let inputstrC = inputC.getMsg();
+                        if (inputstrC.length > 32) {
+                            s.reply(`${inputstrC}这他妈叫secret啊`)
+                        } else {
+                            qlConfig.secret = inputstrC;
+                            await qldb.set('ql', qlConfigs);
+                            s.reply(`ql${optionstr}secret已修改为${qlConfig.secret}`);
+                        }
+                    }
+                    else {
+                        s.reply("输入的配置项无效");
+                    }
+                }
+                //设置elmqq青龙
+                else if (optionstr == "a") {
+                    s.reply("请输入要设置的容器编号");
+                    let input = await s.waitInput(() => { }, 20) ?? s.reply('超时,已退出');
+                    let inputstr = input.getMsg();
+                    if (inputstr == "q" || inputstr == "Q") {
+                        await s.reply("已退出");
+                    }
+                    let inputnum = parseInt(inputstr, 10);
+                    if (isNaN(inputnum) || inputnum < 0 || inputnum >= qlConfigs.length) {
+                        s.reply("输入的编号无效");
+                    }
+                    qlConfigs[inputnum].elmqq = true;
+                    await qldb.set('ql', qlConfigs);
+                    s.reply(`设置成功`);
+                }
             }
-            s.reply(output);
-            const qlKey = await s.waitInput(() => { }, 10) ?? s.reply('超时,已退出');
-            //config[prop] = newValue; 
-            //delete config.token;
-            //await qldb.set(qlKey, config);
-            console.log(qls);
         })();
     }
+    //重构数据库
+    async function migrateData() {
+        const allKeys = await qldb.keys();
+        const oldContainerKeys = allKeys.filter(key => key.startsWith('ql') && !key.includes('token'));
+        const newContainersArray = [];
+
+        for (const key of oldContainerKeys) {
+            const container = await qldb.get(key);
+            newContainersArray.push(container);
+            await qldb.del(key); // 选项：可以删除旧的数据结构
+        }
+
+        await qldb.set('ql', newContainersArray); // 将所有容器存储在新的'ql'键下
+    }
+
     //查询青龙接口
     async function getToken() {
-        const keys = await qldb.keys();
-        const qlkeys = keys.filter(key => !key.includes("token"));
-        for (const qlKey of qlkeys) {
-            const qlConfig = await qldb.get(qlKey);
+        const containers = await qldb.get("ql"); // 直接从'ql'键获取所有容器
+        if (!containers || !Array.isArray(containers)) {
+            console.error("No containers found or invalid format");
+            return;
+        }
+
+        for (const container of containers) {
             console.log("正在查询青龙接口");
-            const { host, client_id, client_secret } = qlConfig;
-            let token
-            let url = `http://${host}/open/auth/token?client_id=${client_id}&client_secret=${client_secret}`;
-            let body = ``
-            let options = populateOptions(url, token, body);
+            const { host, id, secret, name } = container;
+
+            let url = `http://${host}/open/auth/token?client_id=${id}&client_secret=${secret}`;
+            let body = ``;
+            let options = populateOptions(url); // 不需要传token来获取新的token
             console.log(url);
+
             try {
                 const response = await got.get(options);
                 console.log(response.body);
                 let result = response.body;
+
                 if (result.code == 200) {
-                    token = result.data.token;
-                    await qldb.set(qlKey + ".token", token);
-                    console.log(`${qlKey}查询青龙接口成功`);
+                    const token = result.data.token;
+                    // 更新容器的token
+                    container.token = token;
+                    console.log(`ql${name}查询青龙接口成功`);
                 } else {
                     console.log(`查询青龙接口失败: ${result.message}`);
                 }
@@ -653,8 +922,10 @@ module.exports = async (s) => {
                 console.error(error);
             }
         }
-    }
 
+        // 保存所有更新后的容器到数据库
+        await qldb.set("ql", containers);
+    }
     function populateOptions(url, auth, body = '') {
         let options = {
             url: url,
@@ -684,8 +955,8 @@ module.exports = async (s) => {
         try {
             const response = await got(options);
             const responseBody = JSON.parse(response.body);
-            // 如果响应没有错误，那么返回响应体中的 username
-            return responseBody.username;
+            console.log(response.body)
+            return responseBody;
         } catch (error) {
             const errorBody = JSON.parse(error.response.body);
             if (errorBody.name === "UNAUTHORIZED") {
@@ -709,7 +980,7 @@ module.exports = async (s) => {
                 host: 'restapi.ele.me',
             },
         };
-        config = await getqlconfig('ql');
+        config = await getqlconfig('1697731480559');
         const client = new QLClient(config);
         try {
             const response = await got(options);
@@ -728,7 +999,7 @@ module.exports = async (s) => {
                 await enableenv(envInfo.id);
             } else if (!envInfo) {
                 console.log("添加环境变量");
-                await addenv('elmck', cookie, username);
+                await client.addEnv('elmck', cookie, username);
             }
         } catch (error) {
             console.log(`catch error: ${error.message}`)
