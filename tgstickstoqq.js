@@ -232,7 +232,7 @@ module.exports = async (s) => {
             s.reply('请使用pgm对机器人发送\nsticks\n获取绑定码');
             return;
         }
-        param2 = param2.length
+        param2length = param2.length
         if (param2 > 15) {
             const keys = await usrDb.keys();
             console.log(keys);  // 输出: [ '1919577580' ]

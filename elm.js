@@ -23,15 +23,18 @@
  */
 const validator = require("validator")
 const got = require('got');
-const agent = require("global-agent")
 const qldb = new BncrDB("elm");
 const usrDb = new BncrDB('elmDB');
 const AmTool = require("../红灯区/mod/AmTool");
-const ql = require('../红灯区/mod/ql');
 
 
 module.exports = async (s) => {
-    agent.bootstrap.HTTP_PROXY = "http://192.168.3.10:8080";
+    // //清空usrDb数据库
+    // let keys = await usrDb.keys();  // 获取所有的 key
+    // for (let key of keys) {
+    //     await usrDb.del(key);
+    // }
+
     let globalEnv = [];
     const userId = s.getUserId();
     let platform = s.getFrom();
@@ -77,7 +80,7 @@ module.exports = async (s) => {
             migrateData();
             break;
         default:
-            searchspecificelm();
+            searchspecificelm(s);
             break;
     }
     class QLClient {
@@ -508,19 +511,50 @@ module.exports = async (s) => {
         let userInfo = await getUserInfo();
 
         if (userInfo) {
+            let accountList = [];
+
             //获取抢券容器
             let qlNames = await getSpecificQLnames("elmqq");
             const allEnvs = await getAllEnvsFromQLs(qlNames);
             const mergedEnvs = mergeAndDeduplicateEnvs(allEnvs);
             await supplementEnvs(allEnvs, mergedEnvs);
-            const accountList = generateAccountListFromMergedEnvs(mergedEnvs);
-            s.reply("账户列表：\n" + accountList + '\n' + "请输入编号进行抢券设置，q退出");
+            generateAccountListFromMergedEnvs(mergedEnvs);
+            // 遍历每一个账户，并获取其 elmck
+            for (let index = 0; index < userInfo.accounts.length; index++) {
+                const account = userInfo.accounts[index];
+                const username = account.username;
+                if (account.coupon === true) {
+                    let logMessage = `编号：${index}，账户：${username}, 状态：已抢券\n`;
+                    accountList.push(logMessage);
+                } else {
+                    let logMessage = `编号：${index}，账户：${username}状态：未抢券\n`;
+                    accountList.push(logMessage);
+                }
+            }
+            s.reply("账户列表：\n" + accountList.join('') + '\n' + "请输入编号进行抢券设置，q退出");
+            //等待用户输入编号选择账号进行操作
+            let input = await s.waitInput(() => { }, 60);
+            let accountIndex = parseInt(input.getMsg(), 10);
+            if (isNaN(accountIndex) || accountIndex < 0 || accountIndex >= userInfo.accounts.length) {
+                s.reply("输入的编号无效");
+                return;
+            }
+            let selectedAccount = userInfo.accounts[accountIndex];
+            // let coupon = selectedAccount.coupon
+            console.log(selectedAccount.coupon);
+            if (selectedAccount.coupon === true) {
+                selectedAccount.coupon = false
+            } else {
+                selectedAccount.coupon = true
+            }
+            await usrDb.set(platform + ':' + userId, userInfo);
+            let selectedElmck = selectedAccount.elmck;
             for (const qlName of qlNames) {
                 const config = await getqlconfig(qlName);
                 const client = new QLClient(config);
                 let envs = await client.searchEnv('elmqqck');
                 let matchedEnv = envs ? envs.find((env) => env.value === selectedElmck) : null;
-        
+
                 if (matchedEnv) {
                     // 如果ck存在且状态为禁用，则启用之
                     if (matchedEnv.status === 1) {
@@ -535,7 +569,7 @@ module.exports = async (s) => {
                     await client.addEnv('elmqqck', selectedElmck, selectedAccount.username);
                 }
             }
-        
+
             s.reply(`账号${selectedAccount.username}的设置已更新`);
         }
 
@@ -554,11 +588,16 @@ module.exports = async (s) => {
     // 合并并去重所有容器的envs
     function mergeAndDeduplicateEnvs(allEnvs) {
         let merged = [];
-        for (const { envs } of allEnvs) {
-            for (const env of envs) {
-                if (!merged.some(e => e.value === env.value)) {
-                    merged.push(env);
+        for (const entry of allEnvs) {
+            const envs = entry.envs;
+            if (envs) {
+                for (const env of envs) {
+                    if (!merged.some(e => e.value === env.value)) {
+                        merged.push(env);
+                    }
                 }
+            } else {
+                console.error("envs is not an array in one of the entries of allEnvs");
             }
         }
         return merged;
@@ -628,17 +667,11 @@ module.exports = async (s) => {
                     const client = new QLClient(container);
 
                     let envs = await client.searchEnv('elmck');
-                    let existsInQingLong = envs.some(env => env.value == elmck);
+                    let existsInQingLong = envs && envs.some(env => env.value == elmck);
 
                     if (existingAccount && existsInQingLong) {
                         isExistingInAnyContainer = true;
                     } else {
-                        // 如果账户在数据库中不存在
-                        if (!existingAccount) {
-                            // 将新的 elmck 添加到用户信息中
-                            userInfo.accounts.push({ elmck, username });
-                            await usrDb.set(platform + ':' + userId, userInfo);
-                        }
                         // 如果账户在青龙环境变量中不存在
                         if (!existsInQingLong) {
                             // 将新的 elmck 添加到青龙中
@@ -646,6 +679,12 @@ module.exports = async (s) => {
                             isAddedInAnyContainer = true;
                         }
                     }
+                }
+                // 如果账户在数据库中不存在
+                if (!existingAccount) {
+                    // 将新的 elmck 添加到用户信息中
+                    userInfo.accounts.push({ elmck, username });
+                    await usrDb.set(platform + ':' + userId, userInfo);
                 }
 
                 if (isExistingInAnyContainer) {
@@ -1065,7 +1104,7 @@ module.exports = async (s) => {
         const str = s.getMsg();
         let sidMatch = str.match(/SID=[^;]*/);
         let cookie2Match = str.match(/cookie2=[^;]*/);
-
+        let userid = str.match(/USERID=[^;]*/);
         let result = '';
         let missing = '';
 
@@ -1079,7 +1118,11 @@ module.exports = async (s) => {
         } else {
             missing += 'cookie2 is missing. ';
         }
-
+        if (userid) {
+            result += userid[0] + ';';
+        } else {
+            missing += 'USERID is missing. ';
+        }
         if (missing === '') {
             //s.reply(result);
             return result;
