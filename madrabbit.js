@@ -12,19 +12,18 @@
  * @public false
  * @disable false
  */
-
-const { log } = require('oicq/lib/common');
 module.exports = async (s) => {
-    const rabbit = new BncrDB("RabbitPro")
     const path = require('path');
+    const math = require('mathjs')
+    const fs = require('fs');
+    const got = require('got');
     const userId = await s.getUserId()
     const group_id = await s.getGroupId()
     const platform = await s.getFrom()
+    const rabbit = new BncrDB("RabbitPro")
     let url = await rabbit.get("addr")
-    const fs = require('fs');
-    const got = require('got');
+
     let num = 2 //test
-    let code = ""
     if (url[url.length - 1] === '/') {
         url = url.substring(0, url.length - 1)
     }
@@ -32,6 +31,24 @@ module.exports = async (s) => {
         if (!url) {
             s.reply("Madrabbit对接地址为空  请先对接  指令: set RabbitPro addr http://123.123.123.123:12345")
             return
+        }
+        const { question, answer, includeSquare } = generateMathQuestion();
+        if (group_id.length > 2) {
+            let waitime = (includeSquare !== 0) ? 12 : 8
+            s.reply(`请在${waitime}s内完成：${question}`)
+            const answerInput = await s.waitInput(() => { }, waitime);
+            const answerInputStr = answerInput == null ? "" : answerInput.getMsg()
+            console.log(answerInputStr);
+            if (answerInput == null) {
+                s.reply("超时,已退出")
+                return
+            } else if (answerInputStr == "q" || answerInputStr == "Q") {
+                s.reply("好难不会做，呜呜呜")
+                return
+            } else if (answerInputStr !== answer.toString()) {
+                s.reply(`答错了，正确答案是${answer}不行看看脑子吧`)
+                return
+            }
         }
         s.reply("请输入选项：\n1.扫🐴登录\n2.短信💡撸")
         const option = await s.waitInput(() => { }, 60);
@@ -62,7 +79,38 @@ module.exports = async (s) => {
             return;
         }
     }
+    function generateMathQuestion() {
+        const num1 = math.randomInt(40, 80);
+        const num2 = math.randomInt(8, 15);
+        const num3 = math.randomInt(11, 17);
+        const num4 = math.randomInt(6, 15);
 
+        // 随机决定是否添加平方运算
+        const includeSquare = math.randomInt(0, 3); // 生成0-2的随机整数
+
+        let question, answer;
+        switch (includeSquare) {
+            case 0:
+                // 包含平方运算
+                question = `${num2} + ${num4}^2`;
+                answer = math.evaluate(question);
+                break;
+            case 1:
+                // 仅包含基本的加法和乘法
+                question = `${num1} + ${num2} * ${num3}`;
+                answer = math.evaluate(question);
+                break;
+            case 2:
+                // 求导
+                const poly = `${num4}x^2 + ${num2}x + ${num3}`;
+                question = `求导：${poly}`;
+                answer = math.derivative(poly, 'x').toString();
+                //移除answer中的*与空格
+                answer = answer.replace(/\*/g, '').replace(/\s/g, '');
+        }
+
+        return { question, answer, includeSquare };
+    }
     async function SendSMS(phone) {
         const SendSMSURL = url + "/sms/sendSMS"
         let SendSMSResult = await got.post(SendSMSURL, {
