@@ -18,6 +18,7 @@ module.exports = async (s) => {
     const rabbit = new BncrDB("RabbitPro")
     const path = require('path');
     const userId = await s.getUserId()
+    const group_id = await s.getGroupId()
     const platform = await s.getFrom()
     let url = await rabbit.get("addr")
     const fs = require('fs');
@@ -55,8 +56,9 @@ module.exports = async (s) => {
                 s.reply("已退出")
                 return
             }
-            await SendSMS(phonestr)
             s.reply(`正在获取验证码，请稍等`)
+
+            await SendSMS(phonestr)
             return;
         }
     }
@@ -127,9 +129,14 @@ module.exports = async (s) => {
             platform: platform,
             path: `http://127.0.0.1:9090/public/qr.png`,
             type: 'image',
-            userId: userId,
             msg: ''
         };
+        if (group_id !== '0') {
+            obj.groupId = group_id;
+        } else {
+            obj.userId = userId;
+        }
+        console.log(obj);
         await sysMethod.push(obj);
         s.reply(`请使用手机扫描二维码登陆`)
         //login status check
