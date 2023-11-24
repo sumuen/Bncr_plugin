@@ -350,7 +350,9 @@ module.exports = async (s) => {
         let keys = await usrDb.keys();  // 获取所有的 key
         for (let key of keys) {
             let userInfo = await usrDb.get(key);  // 根据 key 获取对应的 value
-            for (let account of userInfo.accounts) {
+            let modified = false; 
+            for (let i = userInfo.accounts.length - 1; i >= 0; i--) {
+                let account = userInfo.accounts[i];
                 let elmck = account.elmck;
                 let index = userInfo.accounts.findIndex(acc => acc.username === account.username);
                 // 使用 elmck 进行 testCookie 检查,如果有效则查验qlenv中是否存在，如果不存在则添加，如果存在但status为1则调用enableenv启用，
@@ -364,7 +366,10 @@ module.exports = async (s) => {
                     },
                 ];
                 if (responseBody) {
-                    account.ban = 0;
+                    if (account.ban !== 0) {
+                        account.ban = 0;
+                        modified = true; // 标记为已修改
+                    }
                     let envs = await client.searchEnv('elmck');
                     let envInfo = envFindId(envs, elmck);
                     //console.log(envInfo);
@@ -378,14 +383,12 @@ module.exports = async (s) => {
                     }
                 }
                 if (!responseBody) {
-                    if (!account.ban) {
-                        account.ban = 0;
-                    }
-                    account.ban++;
+                    account.ban = (account.ban || 0) + 1;;
                     if (index > -1 && account.ban >= 3) {
                         userInfo.accounts.splice(index, 1);
                     }
-                    console.log(index, userInfo.accounts)
+                    modified = true;
+                    console.log(index,userInfo.accounts)
                     console.log(`账号 ${account.username} 的 Cookie 已失效`);
                     senders.forEach(e => {
                         let obj = {
@@ -400,9 +403,11 @@ module.exports = async (s) => {
                     continue;
                 }
             }
-            await usrDb.set(key, userInfo);
+            if (modified) {
+                await usrDb.set(key, userInfo); 
+            }
         }
-
+       
         console.log("结束执行定时任务");
     }
     //getuserinfo
