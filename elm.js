@@ -394,7 +394,7 @@ module.exports = async (s) => {
                             type: 'text',
                         };
                         obj[e.type] = e.id;
-                        //sysMethod.push(obj);
+                        sysMethod.push(obj);
                         console.log(userId + keyPlatform);
                     });
                     continue;
