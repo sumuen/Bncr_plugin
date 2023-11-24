@@ -19,7 +19,7 @@
  * @admin false
  * @origin muzi
  * @disable false
- * @cron 0 * 6,9,12,15,18,19,21 * * *
+ * @cron 0 0 9,21 * * *
  */
 const validator = require("validator")
 const got = require('got');
@@ -38,6 +38,9 @@ module.exports = async (s) => {
     let globalEnv = [];
     const userId = s.getUserId();
     let platform = s.getFrom();
+    if (platform === "ntqq") {
+        platform = "qq";
+    }
     const key = platform + ':' + userId;
     let config
     //检查是否有青龙配置
@@ -349,6 +352,7 @@ module.exports = async (s) => {
             let userInfo = await usrDb.get(key);  // 根据 key 获取对应的 value
             for (let account of userInfo.accounts) {
                 let elmck = account.elmck;
+                let index = userInfo.accounts.findIndex(acc => acc.username === account.username);
                 // 使用 elmck 进行 testCookie 检查,如果有效则查验qlenv中是否存在，如果不存在则添加，如果存在但status为1则调用enableenv启用，
                 //如果失效则推送失效账号并调用disableenv禁用账号
                 let responseBody = await testCookie(elmck);
@@ -360,10 +364,11 @@ module.exports = async (s) => {
                     },
                 ];
                 if (responseBody) {
+                    account.ban = 0;
                     let envs = await client.searchEnv('elmck');
                     let envInfo = envFindId(envs, elmck);
                     //console.log(envInfo);
-                    console.log(`${userId}+${responseBody.mobile}`)
+                    //console.log(`${userId}+${responseBody.mobile}`)
                     if (envInfo && envInfo.status === 1) {
                         console.log("启用环境变量");
                         await enableenv(envInfo.id);
@@ -373,21 +378,31 @@ module.exports = async (s) => {
                     }
                 }
                 if (!responseBody) {
-                    console.log(`账号 '${account.username}' 的 Cookie 已失效`);
+                    if (!account.ban) {
+                        account.ban = 0;
+                    }
+                    account.ban++;
+                    if (index > -1 && account.ban >= 3) {
+                        userInfo.accounts.splice(index, 1);
+                    }
+                    console.log(index, userInfo.accounts)
+                    console.log(`账号 ${account.username} 的 Cookie 已失效`);
                     senders.forEach(e => {
                         let obj = {
                             platform: keyPlatform,  // Use the platform extracted from the key
-                            msg: `${account.username}的cookie已失效，进入app，我的点几下`,
+                            msg: `${account.username}的cookie已失效，进入app，我的,会员中心，点几下，这会让ck重新生效`,
                             type: 'text',
                         };
                         obj[e.type] = e.id;
-                        sysMethod.push(obj);
+                        //sysMethod.push(obj);
                         console.log(userId + keyPlatform);
                     });
                     continue;
                 }
             }
+            await usrDb.set(key, userInfo);
         }
+
         console.log("结束执行定时任务");
     }
     //getuserinfo
@@ -429,77 +444,6 @@ module.exports = async (s) => {
                 const username = account.username;
                 // 使用得到的 elmck 调用 fetchUserDetail 函数
                 await fetchUserDetail(elmck, username);
-            }
-        } else {
-            s.reply("elm未绑定");
-        }
-    }
-    //elmqq
-    async function elmqqFunction() {
-        //查找账户
-        let userInfo = await getUserInfo();
-
-        if (userInfo) {
-            let accountList = [];
-            //获取抢券容器
-            let qlNames = await getSpecificQLnames("elmqq");
-            if (qlNames) {
-                for (const qlName of qlNames) {
-                    const config = await getqlconfig(qlName);
-                    const client = new QLClient(config);
-                    let envs = await client.searchEnv('elmqqck');
-                    // 遍历每一个账户，并获取其 elmck
-                    for (let index = 0; index < userInfo.accounts.length; index++) {
-                        const account = userInfo.accounts[index];
-                        const elmck = account.elmck;
-                        const username = account.username;
-                        //使用之前获取的envs
-                        let logMessage = `编号：${index}，账户：${username}, 状态：`;
-                        if (envs) {
-                            let matchedEnv = envs.find((env) => env.value === elmck);
-                            if (matchedEnv) {
-                                logMessage += matchedEnv.status === 0 ? "已抢券" : "禁用";
-                            } else {
-                                logMessage += "未启用";
-                            }
-                        } else {
-                            logMessage += "未启用";
-                        }
-                        accountList.push(logMessage);
-                    }
-                    s.reply("账户列表：\n" + accountList.join('\n') + '\n' + "请输入编号进行抢券设置，q退出");
-
-                    //等待用户输入编号选择账号进行操作
-                    let input = await s.waitInput(() => { }, 60);
-                    let accountIndex = parseInt(input.getMsg(), 10);
-                    if (isNaN(accountIndex) || accountIndex < 0 || accountIndex >= userInfo.accounts.length) {
-                        s.reply("输入的编号无效");
-                        return;
-                    }
-                    let selectedAccount = userInfo.accounts[accountIndex];
-                    let selectedElmck = selectedAccount.elmck;
-                    //查找环境变量中是否有对应的ck
-                    let matchedEnv = envs ? envs.find((env) => env.value === selectedElmck) : null;
-                    if (matchedEnv) {
-                        // 如果ck存在且状态为禁用，则启用之
-                        if (matchedEnv.status === 1) {
-                            await client.enablEnv(matchedEnv._id);
-                            s.reply(`账号${selectedAccount.username}已设置为抢券状态`);
-                        }
-                        //如果启用则禁用之
-                        else {
-                            await client.disableEnv(matchedEnv._id);
-                            s.reply(`账号${selectedAccount.username}已取消抢券`)
-                        }
-                    } else {
-                        // 如果ck不存在，则添加之
-                        await client.addEnv('elmqqck', selectedElmck, selectedAccount.username);
-                        s.reply(`账号${selectedAccount.username}已设置为抢券状态`);
-                    }
-                }
-            } else {
-                // 没有找到任何配置
-                s.reply("没有找到抢券的容器");
             }
         } else {
             s.reply("elm未绑定");
@@ -724,12 +668,12 @@ module.exports = async (s) => {
             if (!vaild) {
                 let ckmsg = await s.reply(account.elmck + "\n" + account.username + "已失效");
                 console.log("已失效" + account.elmck);
-                await s.delMsg(ckmsg, { wait: 10 });
+                await s.reply(ckmsg, { wait: 10 });
 
             } else {
                 let ckmsg = await s.reply(account.elmck);
                 console.log(account.elmck);
-                await s.delMsg(ckmsg, { wait: 10 });
+                await s.reply(ckmsg, { wait: 10 });
             }
         }
     }
@@ -940,8 +884,7 @@ module.exports = async (s) => {
             const { host, id, secret, name } = container;
 
             let url = `http://${host}/open/auth/token?client_id=${id}&client_secret=${secret}`;
-            let body = ``;
-            let options = populateOptions(url); // 不需要传token来获取新的token
+            let options = populateOptions(url);
             console.log(url);
 
             try {
@@ -1105,6 +1048,7 @@ module.exports = async (s) => {
         let sidMatch = str.match(/SID=[^;]*/);
         let cookie2Match = str.match(/cookie2=[^;]*/);
         let userid = str.match(/USERID=[^;]*/);
+        let unb = str.match(/unb=[^;]*/);
         let result = '';
         let missing = '';
 
@@ -1122,6 +1066,11 @@ module.exports = async (s) => {
             result += userid[0] + ';';
         } else {
             missing += 'USERID is missing. ';
+        }
+        if (unb) {
+            result += unb[0] + ';';
+        } else {
+            missing += 'unb is missing.'
         }
         if (missing === '') {
             //s.reply(result);
