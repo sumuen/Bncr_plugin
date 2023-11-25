@@ -350,7 +350,7 @@ module.exports = async (s) => {
         let keys = await usrDb.keys();  // 获取所有的 key
         for (let key of keys) {
             let userInfo = await usrDb.get(key);  // 根据 key 获取对应的 value
-            let modified = false; 
+            let modified = false;
             for (let i = userInfo.accounts.length - 1; i >= 0; i--) {
                 let account = userInfo.accounts[i];
                 let elmck = account.elmck;
@@ -374,9 +374,9 @@ module.exports = async (s) => {
                     let envInfo = envFindId(envs, elmck);
                     //console.log(envInfo);
                     //console.log(`${userId}+${responseBody.mobile}`)
-                    if (envInfo && envInfo.status === 1) {
+                    if (envInfo && envInfo[1] === 1) {
                         console.log("启用环境变量");
-                        await enableenv(envInfo.id);
+                        await client.enablEnv(envInfo[0]);
                     } else if (!envInfo) {
                         console.log("添加环境变量");
                         await client.addEnv('elmck', elmck, account.username);
@@ -384,11 +384,11 @@ module.exports = async (s) => {
                 }
                 if (!responseBody) {
                     account.ban = (account.ban || 0) + 1;;
-                    if (index > -1 && account.ban >= 3) {
+                    if (index > -1 && account.ban > 3) {
                         userInfo.accounts.splice(index, 1);
                     }
                     modified = true;
-                    console.log(index,userInfo.accounts)
+                    console.log(index, userInfo.accounts)
                     console.log(`账号 ${account.username} 的 Cookie 已失效`);
                     senders.forEach(e => {
                         let obj = {
@@ -404,10 +404,10 @@ module.exports = async (s) => {
                 }
             }
             if (modified) {
-                await usrDb.set(key, userInfo); 
+                await usrDb.set(key, userInfo);
             }
         }
-       
+
         console.log("结束执行定时任务");
     }
     //getuserinfo
@@ -978,12 +978,11 @@ module.exports = async (s) => {
             console.log(response.body);
             // 检查环境变量的状态，如果它被禁用，则启用它
             let envs = await client.searchEnv('elmck');
-            console.log(!envs);
             let envInfo = envFindId(envs, cookie);
             console.log(envInfo);
-            if (envInfo && envInfo.status === 1) {
+            if (envInfo && envInfo[1] === 1) {
                 console.log("启用环境变量");
-                await enableenv(envInfo.id);
+                await client.enablEnv(envInfo[0]);
             } else if (!envInfo) {
                 console.log("添加环境变量");
                 await client.addEnv('elmck', cookie, username);
@@ -1000,7 +999,7 @@ module.exports = async (s) => {
                 let envs = await client.searchEnv('elmck');
                 let envId = envFindId(envs, cookie);
                 if (envId) {
-                    await client.disableEnv(envId);
+                    await client.disableEnv(envId[0]);
                 }
             } else {
                 console.log(error.response.body);
@@ -1041,7 +1040,7 @@ module.exports = async (s) => {
     function envFindId(envs, invalidCookie) {
         let invalidEnv = envs.find((env) => env.value === invalidCookie);
         if (invalidEnv) {
-            return invalidEnv._id;  // 返回找到的环境变量的 id
+            return [invalidEnv._id, invalidEnv.status];  // 返回找到的环境变量的 id
         } else {
             console.log(`未查询到匹配的环境变量`);
             return null;
