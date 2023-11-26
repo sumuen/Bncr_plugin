@@ -260,8 +260,9 @@ class QLClient {
                 if (line.includes('=')) {
                     const indexOfFirstEqual = line.indexOf('=');
                     let key = line.substring(0, indexOfFirstEqual).replace(/export\s+/, '').trim();
-                    let value = line.substring(indexOfFirstEqual + 1).trim().replace(/^"|"$/g, '');
-                    config[key] = { value, line };
+                    let value = line.substring(indexOfFirstEqual + 1).trim();
+                    let isNumeric = !isNaN(value) && !isNaN(parseFloat(value));
+                    config[key] = { value: isNumeric ? parseFloat(value) : value, line };
                 } else {
                     // 保存注释和非配置行
                     config[line] = { value: null, line };
@@ -270,6 +271,19 @@ class QLClient {
         });
         return config;
     }
+
+    configToString(config) {
+        return Object.values(config).map(item => {
+            if (item.value === null) {
+                return item.line;
+            } else {
+                const isString = typeof item.value === 'string';
+                let valueStr = isString ? `"${item.value.replace(/"/g, '')}"` : item.value;
+                return `${item.line.split('=')[0].trim()}=${valueStr}`;
+            }
+        }).join('\n');
+    }
+
     //populateOptions
     populateOptions(url, auth, body = '') {
         let options = {
@@ -294,9 +308,9 @@ class QLClient {
             config[`export ${key}`] = { value, line: `export ${key}="${value}"` }; // 添加操作
         }
     }
-    configToString(config) {
-        return Object.values(config).map(item => item.value === null ? item.line : `${item.line.split('=')[0].trim()}="${item.value}"`).join('\n');
-    }
+    // configToString(config) {
+    //     return Object.values(config).map(item => item.value === null ? item.line : `${item.line.split('=')[0].trim()}="${item.value}"`).join('\n');
+    // }
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms))
     }
