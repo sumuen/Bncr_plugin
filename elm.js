@@ -343,6 +343,7 @@ module.exports = async (s) => {
 
     async function executeCronTask() {
         console.log("开始执行定时任务");
+        //const qlname = await getSpecificQLnames("elmqq");
         //定时执行cookie检测
         config = await getqlconfig("1697731480559");
         console.log(config);
@@ -421,7 +422,7 @@ module.exports = async (s) => {
         console.log(qlConfigs);
 
         // 根据name查询对应的青龙配置
-        const qlConfig = qlConfigs.find(config => config.name === qlname);
+        const qlConfig = qlConfigs.find(config => config.name == qlname);
         if (!qlConfig) {
             console.log(`未找到青龙配置：${qlname}`);
             return null;
@@ -566,7 +567,7 @@ module.exports = async (s) => {
         return mergedEnvs.map((env, index) => `编号：${index}，账户：${env.remarks}, 状态：${env.status === 0 ? "已抢券" : "禁用"}`).join('\n');
     }
     // 获取特定青龙配置
-    async function getSpecificQLnames(Specificdata = "host") {
+    async function getSpecificQLnames(Specificdata = "elmqq") {
         const qlConfigs = await qldb.get('ql');
         let qlnames = [];
 
@@ -980,7 +981,7 @@ module.exports = async (s) => {
             let envs = await client.searchEnv('elmck');
             let envInfo = envFindId(envs, cookie);
             console.log(envInfo);
-            if (envInfo && envInfo[1] === 1) {
+            if (envInfo &&envInfo[1] === 1) {
                 console.log("启用环境变量");
                 await client.enablEnv(envInfo[0]);
             } else if (!envInfo) {
