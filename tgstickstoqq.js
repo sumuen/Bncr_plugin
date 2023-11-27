@@ -1,7 +1,7 @@
 /**
  * @author muzi
  * @name convert tg sticks to qq 
- * @description Analysis of messages using GPT-3
+ * @description docker exec bncr -it /bin/sh apk add ffmpeg
  * @rule ^sticks$
  * @rule ^(sticks) ([\s\S]+)$
  * @version 1.0.0
@@ -13,6 +13,7 @@
 const got = require('got');
 const path = require('path');
 const fs = require('fs').promises;
+const ffmpeg = require('fluent-ffmpeg');
 const { spawn, exec } = require('child_process');
 const usrDb = new BncrDB("tg2qq");
 const Token = sysMethod.config.tgBot.token;
@@ -45,6 +46,7 @@ module.exports = async (s) => {
     async function downloadStickers(sticker_set_name) {
         const baseURL = `https://api.telegram.org/bot${Token}/`;
         const saveFolder = path.join("/bncr/BncrData/public/", sticker_set_name);
+        console.log(saveFolder);
 
         try {
             await fs.mkdir(saveFolder);
@@ -81,9 +83,25 @@ module.exports = async (s) => {
             }
             console.log(`${saveFolder}`)
             s.reply('下载完成，开始转换格式');
-
-            await convertTgsFiles(sticker_set_name);
-            await deleteTgsFiles(saveFolder);
+            //查看文件后缀
+            const files = await fs.readdir(saveFolder);
+            //如果文件后缀为tgs,调用convertTgsFiles
+            if (files[0].endsWith('.tgs')) {
+                await convertTgsFiles(sticker_set_name);
+                await deleteTgsFiles(saveFolder);
+            }
+            //如果文件后缀为webm,convertFolderToGifs
+            if (files[0].endsWith('.webm')) {
+                await convertFolderToGifs(saveFolder);
+            }
+            //如果文件后缀为webp,修改后缀为gif
+            if (files[0].endsWith('.webp')) {
+                const files = await fs.readdir(saveFolder);
+                const renamePromises = files
+                    .filter(file => file.endsWith('.webp'))
+                    .map(file => fs.rename(path.join(saveFolder, file), path.join(saveFolder, file.replace('.webp', '.gif'))));
+                await Promise.all(renamePromises);
+            }
             //编辑消息体，发送到qq
             //读取绑定的qqid
             const userId = await usrDb.get(s.getUserId());
@@ -94,6 +112,42 @@ module.exports = async (s) => {
         }
 
     }
+    async function convertFolderToGifs(folderPath) {
+        const files = await fs.readdir(folderPath);
+
+        for (const file of files) {
+            if (file.endsWith('.webm')) {
+                const inputPath = path.join(folderPath, file);
+                const outputPath = path.join(folderPath, file.replace('.webm', '.gif'));
+
+                try {
+                    await convertWebMToGif(inputPath, outputPath);
+                    // Delete the original WebM file after successful conversion
+                    await fs.unlink(inputPath);
+                    console.log(`Deleted original file ${inputPath}`);
+                } catch (error) {
+                    console.error(`Error processing file ${inputPath}: ${error}`);
+                }
+            }
+        }
+    }
+
+    async function convertWebMToGif(inputPath, outputPath) {
+        return new Promise((resolve, reject) => {
+            ffmpeg(inputPath)
+                .toFormat('gif')
+                .on('error', (err) => {
+                    console.error(`An error occurred for file ${inputPath}: ` + err.message);
+                    reject(err);
+                })
+                .on('end', () => {
+                    console.log(`Conversion finished for file ${inputPath}`);
+                    resolve();
+                })
+                .save(outputPath);
+        });
+    }
+
 
     async function convertTgsFiles(sticker_set_name) {
         const dockerCommand = 'docker';
@@ -163,8 +217,9 @@ module.exports = async (s) => {
                 for (const filename of gifFiles) {
                     const obj = {
                         platform: "qq",
-                        path: `http://127.0.0.1:9090/public/${sticker_set_name}/${filename}`,
+                        path: `http://192.168.3.6:9090/public/${sticker_set_name}/${filename}`,
                         type: 'image',
+                        msg: '',
                     };
                     obj[sender.type] = sender.id;
 
@@ -233,7 +288,7 @@ module.exports = async (s) => {
             return;
         }
         param2length = param2.length
-        if (param2 > 15) {
+        if (param2length > 15) {
             const keys = await usrDb.keys();
             console.log(keys);  // 输出: [ '1919577580' ]
 
