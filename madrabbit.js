@@ -13,6 +13,7 @@
  * @disable false
  */
 module.exports = async (s) => {
+    const { randomUUID } = require('crypto');
     const path = require('path');
     const math = require('mathjs')
     const fs = require('fs');
@@ -163,8 +164,10 @@ module.exports = async (s) => {
         }
         const qr = GenQrCodeResult.body.qr
         const QRCodeKey = GenQrCodeResult.body.QRCodeKey
+        console.log(QRCodeKey);
         let qrdata = Buffer.from(qr, 'base64')
-        const qrpath = path.join("/bncr/BncrData/public/", 'qr.png')
+        const qrpath = path.join("/bncr/BncrData/public/", randomUUID() + ".png")
+        const hostURL = qrpath.replace("/bncr/BncrData/public/", "http://192.168.3.6:9090/public/");//改成你的网页地址
         fs.writeFile(qrpath, qrdata, function (err) {
             if (err) {
                 console.log(err);
@@ -175,7 +178,7 @@ module.exports = async (s) => {
         //send qrcode
         const obj = {
             platform: platform,
-            path: `http://127.0.0.1:9090/public/qr.png`,
+            path: hostURL,
             type: 'image',
             msg: ''
         };
@@ -189,7 +192,7 @@ module.exports = async (s) => {
         s.reply(`请使用手机扫描二维码登陆`)
         //login status check
         await qrcheck(QRCodeKey)
-        //delete qr.png
+        //delete QR.png
         fs.unlinkSync(qrpath)
     }
     async function qrcheck(QRCodeKey) {
