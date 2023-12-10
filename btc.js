@@ -54,7 +54,7 @@ module.exports = async s => {
           const changePercentage = coin.change_percentage;
 
           result += `${currencyPair}: ${price}, 涨幅: ${changePercentage}\n`;
-          result += `更新时间: ${updateTimestamp}\n`;
+          //result += `更新时间: ${updateTimestamp}\n`;
         } catch (error) {
           s.reply(`嗯？ ${supportCoin.split('_')[0]} 是个什么币O_o？`);
         }
