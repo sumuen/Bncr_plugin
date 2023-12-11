@@ -64,7 +64,7 @@ module.exports = async (s) => {
                     console.log(`${pinArr[i]}已删除`);
                     pinArr.splice(i, 1);
                 }
-                await sleep(1000);
+                await sleep(3000);
             }
             console.log(pinArr);
             pinVal['Pin'] = pinArr;
