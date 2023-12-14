@@ -19,6 +19,8 @@
 
 `sticks` 
 
+![image-20231214212732704](http://easyimage.muzi.studio/i/2023/12/14/z6krlb-0.png)
+
 ```js
 s.reply('请使用tg对机器人发送sticks获取绑定码');
 s.reply('1:进入连续发送模式\n2:发送贴纸包全部贴纸\nq:退出')
