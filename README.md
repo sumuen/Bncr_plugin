@@ -13,6 +13,48 @@
 - `elmqq`: 设置抢券账号
 - `qlconfig`: 设置青龙容器
 
+## tgstickstoqq.js
+
+实现telegram表情到qq的一对一发送，支持单个表情与表情包内全部表情
+
+`sticks` 
+
+```js
+s.reply('请使用tg对机器人发送sticks获取绑定码');
+s.reply('1:进入连续发送模式\n2:发送贴纸包全部贴纸\nq:退出')
+//全部表情包
+    async function handleStickerDownloadAndSend() {
+        const saveFolder = path.join("/bncr/BncrData/public/", sticker_set_name);
+        try {
+            await fs.mkdir(saveFolder);
+            await downloadStickers(saveFolder);
+            await convertStickers(saveFolder);
+        } catch (error) {
+            if (error.code !== 'EEXIST') {
+                console.error(`Error in handling stickers: ${error.message}`);
+                return;
+            }
+        }
+        await sendStickersToUser(saveFolder, sticker_set_name);
+    }
+//单个表情
+    async function handleSignleStickerDownloadAndSend(file_id) {
+        const folder = path.join("/bncr/BncrData/public/", "tmpSticker");
+        try {
+            await fs.mkdir(folder, { recursive: true });
+            await downloadSticker(file_id, folder);
+            await convertStickers(folder,512,24);
+            await sendStickersToUser(folder,"tmpSticker");
+            await sleep(1000)
+            await fs.rm(folder, { recursive: true });
+        } catch (error) {
+            console.error(`Error in handling stickers: ${error.message}`);
+        }
+    }
+```
+
+
+
 ## btc.js
 
 通过调用[api](https://api.gateio.ws/api/v4/spot/tickers)查询虚拟货币价格
@@ -32,7 +74,7 @@
 ## jd过期推送.js
 
 检测到过期ck后，推送给qq个人，删除pin
- 
+
 ## 高格重拨.js
 
 重播高格路由器，需要手动改一下Url，改成你自己的
