@@ -21,96 +21,114 @@ const { randomUUID } = require('crypto');
 let sticker_set_name
 let saveFolder
 module.exports = async (s) => {
-    async function downloadSticker(sticker) {
-        const baseURL = `https://api.telegram.org/bot${Token}/`;
-
+    const param2 = s.param(2)
+    const platform = s.getFrom();
+    const userId = s.getUserId();
+    console.log(platform);
+    const baseURL = `https://api.telegram.org/bot${Token}/`;
+    async function downloadSticker(file_id, saveFolder) {
         const fileResponse = await got.get(`${baseURL}getFile`, {
             searchParams: {
-                file_id: sticker.file_id
+                file_id: file_id
             },
             responseType: 'json'
         });
 
         const file_path = fileResponse.body.result.file_path;
-        console.log(`Downloading ${sticker.file_id}...${file_path}`);
-
+        console.log(`Downloading ${file_id}...${file_path}`);
         const fileURL = `https://api.telegram.org/file/bot${Token}/${file_path}`;
-        saveFolder = path.join("/bncr/BncrData/public/", sticker_set_name);
         const savePath = path.join(saveFolder, file_path.split('/').pop());
-
         const fileData = await got.get(fileURL, { responseType: 'buffer' });
         await fs.writeFile(savePath, fileData.body);
 
         console.log(`Downloaded to ${savePath}`);
     }
-    async function downloadStickers(sticker_set_name) {
-        const baseURL = `https://api.telegram.org/bot${Token}/`;
-        const saveFolder = path.join("/bncr/BncrData/public/", sticker_set_name);
-        console.log(saveFolder);
-
+    async function downloadStickers() {
         try {
-            await fs.mkdir(saveFolder);
-        } catch (err) {
-            if (err.code !== 'EEXIST') {
-                throw err;
-            } else {
-                s.reply('文件夹已存在，直接开始发送！');
-                const userId = await usrDb.get(s.getUserId());
-                // 如果错误是因为文件夹已存在，那么直接调用 sendStickers 函数
-                await sendStickers(sticker_set_name, userId);
-                return;  // 返回，以防止执行下面的代码
-            }
-
-        }
-
-        try {
-
-            // 获取贴纸集信息
             const response = await got.get(`${baseURL}getStickerSet`, {
-                searchParams: {
-                    name: sticker_set_name
-                },
+                searchParams: { name: sticker_set_name },
                 responseType: 'json'
             });
-
             const stickers = response.body.result.stickers;
-            const downloadPromises = stickers.map(sticker => downloadSticker(sticker));
-            try {
-                await Promise.all(downloadPromises);
-                console.log('All stickers downloaded');
-            } catch (error) {
-                console.error(`Error downloading stickers: ${error.message}`);
+            const downloadPromises = stickers.map(sticker => downloadSticker(sticker.file_id, saveFolder));
+            await Promise.all(downloadPromises);
+            console.log('All stickers downloaded');
+        } catch (error) {
+            console.error(`Error downloading stickers: ${error.message}`);
+            throw error;
+        }
+    }
+    async function convertStickers(folder, resolution = 320, fps = 16) {
+        try {
+            const files = await fs.readdir(folder);
+            if (files.length === 0) {
+                throw new Error("No files in the save folder");
             }
-            console.log(`${saveFolder}`)
-            s.reply('下载完成，开始转换格式');
-            //查看文件后缀
-            const files = await fs.readdir(saveFolder);
-            //如果文件后缀为tgs,调用convertTgsFiles
+
             if (files[0].endsWith('.tgs')) {
-                await convertTgsFiles(sticker_set_name);
-                await deleteTgsFiles(saveFolder);
+                await convertTgsFiles(folder, resolution, fps);
+            } else if (files[0].endsWith('.webm')) {
+                await convertFolderToGifs(folder);
+            } else if (files[0].endsWith('.webp')) {
+                await renameWebpToGif(folder);
             }
-            //如果文件后缀为webm,convertFolderToGifs
-            if (files[0].endsWith('.webm')) {
-                await convertFolderToGifs(saveFolder);
+        } catch (error) {
+            console.error(`Error converting stickers: ${error.message}`);
+            throw error;
+        }
+    }
+    async function renameWebpToGif(folder) {
+        try {
+            const files = await fs.readdir(folder);
+            const webpFiles = files.filter(file => file.endsWith('.webp'));
+            for (let file of webpFiles) {
+                const oldPath = path.join(folder, file);
+                const newPath = path.join(folder, file.replace('.webp', '.gif'));
+                await fs.rename(oldPath, newPath);
             }
-            //如果文件后缀为webp,修改后缀为gif
-            if (files[0].endsWith('.webp')) {
-                const files = await fs.readdir(saveFolder);
-                const renamePromises = files
-                    .filter(file => file.endsWith('.webp'))
-                    .map(file => fs.rename(path.join(saveFolder, file), path.join(saveFolder, file.replace('.webp', '.gif'))));
-                await Promise.all(renamePromises);
-            }
-            //编辑消息体，发送到qq
-            //读取绑定的qqid
+
+            console.log(`All .webp files in ${folder} have been renamed to .gif`);
+        } catch (error) {
+            console.error(`Error renaming .webp to .gif in ${folder}: ${error.message}`);
+        }
+    }
+
+    async function sendStickersToUser(folder, sticker_set_name) {
+        try {
             const userId = await usrDb.get(s.getUserId());
             s.reply(`开始发送给${userId}`);
-            await sendStickers(sticker_set_name, userId);
+            await sendStickers(userId, folder, sticker_set_name);
         } catch (error) {
-            console.error(`Error getting sticker set: ${error.message}`);
+            console.error(`Error sending stickers: ${error.message}`);
+            throw error;
         }
-
+    }
+    async function handleStickerDownloadAndSend() {
+        const saveFolder = path.join("/bncr/BncrData/public/", sticker_set_name);
+        try {
+            await fs.mkdir(saveFolder);
+            await downloadStickers(saveFolder);
+            await convertStickers(saveFolder);
+        } catch (error) {
+            if (error.code !== 'EEXIST') {
+                console.error(`Error in handling stickers: ${error.message}`);
+                return;
+            }
+        }
+        await sendStickersToUser(saveFolder, sticker_set_name);
+    }
+    async function handleSignleStickerDownloadAndSend(file_id) {
+        const folder = path.join("/bncr/BncrData/public/", "tmpSticker");
+        try {
+            await fs.mkdir(folder, { recursive: true });
+            await downloadSticker(file_id, folder);
+            await convertStickers(folder, 512, 24);
+            await sendStickersToUser(folder, "tmpSticker");
+            await sleep(1000)
+            await fs.rm(folder, { recursive: true });
+        } catch (error) {
+            console.error(`Error in handling stickers: ${error.message}`);
+        }
     }
     async function convertFolderToGifs(folderPath) {
         const files = await fs.readdir(folderPath);
@@ -147,15 +165,14 @@ module.exports = async (s) => {
                 .save(outputPath);
         });
     }
-
-
-    async function convertTgsFiles(sticker_set_name) {
+    async function convertTgsFiles(folder, resolution, fps) {
+        if (folder === '/bncr/BncrData/public/tmpSticker') sticker_set_name = 'tmpSticker';
         const dockerCommand = 'docker';
         const dockerArgs = [
             'run', '--rm',
-            '-e', 'HEIGHT=320',
-            '-e', 'WIDTH=320',
-            '-e', 'FPS=16',
+            '-e', `HEIGHT=${resolution}`, // 传递环境变量给容器
+            '-e', `WIDTH=${resolution}`,
+            '-e', `FPS=${fps}`,
             '-v', `/data/bncr/public/${sticker_set_name}:/source`,
             'edasriyan/lottie-to-gif'
         ];
@@ -181,25 +198,10 @@ module.exports = async (s) => {
             });
         });
     }
-    async function deleteTgsFiles(folderPath) {
-        try {
-            const files = await fs.readdir(saveFolder);
-            const deletionPromises = files
-                .filter(file => file.endsWith('.tgs'))
-                .map(file => fs.promises.unlink(path.join(folderPath, file)));
-            await Promise.all(deletionPromises);
-            console.log('All .tgs files deleted');
-        } catch (error) {
-            console.error(`Error deleting .tgs files: ${error.message}`);
-        }
-    }
-    async function sendStickers(sticker_set_name, userId) {
-        // 获取保存文件夹路径
-        const saveFolder = path.join("/bncr/BncrData/public", sticker_set_name);
-
+    async function sendStickers(userId, folder, sticker_set_name) {
         try {
             // 异步读取文件夹中的所有文件
-            const files = await fs.readdir(saveFolder);
+            const files = await fs.readdir(folder);
 
             // 过滤出 .gif 文件
             const gifFiles = files.filter(file => file.endsWith('.gif'));
@@ -247,64 +249,94 @@ module.exports = async (s) => {
     function sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
-    // 使用方法
-    //轮训usrDb,如果没有用户id数据，添加用户id数据
-    let param2 = s.param(2)
-    console.log(param2);
-
-    let platform = s.getFrom();
-    console.log(platform);
-    if (!param2 && platform === 'pgm') {
-        let userId = s.getUserId();
+    async function handlePlatform(pgmbot) {
+        if (pgmbot && !param2) {
+            await handlePgmbot();
+        } else {
+            await handleOthers();
+        }
+    }
+    async function handlePgmbot() {
         let ifExist = await usrDb.get(userId);
         console.log(ifExist);
         if (!ifExist) {
-            console.log(platform);
-            //生成随机数用于验证
             let random = randomUUID();
             console.log(random);
             usrDb.set(userId, random);
             s.reply(`请使用qq对机器人发送\nsticks ${random}\n进行验证`);
         } else {
-            s.reply('请发送贴纸');
-            await s.waitInput(async (s) => {
-                let msg = s.getMsg();
-                if (msg === 'q') {
-                    s.reply('已取消');
-                } else {
-                    let msg = s.getMsg();
-                    s.reply(`正在下载贴纸${msg}，请稍等`);
-                    console.log(msg);
-                    sticker_set_name = msg;  // 设置全局变量的值
-                    await downloadStickers(msg);
-
-
-                }
-            }, 30);
-        }
-    } else {//获取用户绑定码
-        if (!param2) {
-            s.reply('请使用pgm对机器人发送\nsticks\n获取绑定码');
-            return;
-        }
-        param2length = param2.length
-        if (param2length > 15) {
-            const keys = await usrDb.keys();
-            console.log(keys);  // 输出: [ '1919577580' ]
-
-            for (const key of keys) {
-                const storedRandom = await usrDb.get(key);  // 使用get方法来获取每个键对应的值
-                console.log(storedRandom);
-                if (storedRandom === param2) {
-                    // 找到匹配项，执行绑定操作
-                    let qqid = s.getUserId();
-                    console.log(qqid);
-                    await usrDb.set(key, qqid);  // 更新数据库中的值
-                    s.reply(`tg:${key}qq:${qqid}已经成功绑定`);
-                    break;  // 如果找到匹配项，退出循环
-                }
-            }
-
+            await handleExistingUser();
         }
     }
+    async function handleExistingUser() {
+        s.reply('请发送贴纸');
+        await s.waitInput(async (s) => {
+            let msg = s.getMsg();
+            if (msg === 'q') {
+                s.reply('已取消');
+            } else {
+                let part = msg.split('&');
+                if (part[0] !== '[sticker]') {
+                    s.reply('请发送贴纸,你他妈发的什么东西');
+                    return;
+                }
+                sticker_set_name = part[1];
+                saveFolder = path.join("/bncr/BncrData/public/", sticker_set_name);
+                await handleSignleStickerDownloadAndSend(part[2]);
+                s.reply('1:进入连续发送模式\n2:发送贴纸包全部贴纸\nq:退出')
+                msg = await s.waitInput(() => { }, 30);
+                msg = msg.getMsg()
+                if (msg === '1') {
+                    s.reply('进入连续发送模式,q退出');
+                    let a = true;
+                    while (a) {
+                        await s.waitInput(async (s) => {
+                            let msg = s.getMsg();
+                            if (msg === 'q') {
+                                s.reply('已取消');
+                                a = false;
+                                return;
+                            } else {
+                                let part = msg.split('&');
+                                if (part[0] !== '[sticker]') {
+                                    s.reply('请发送贴纸,你他妈发的什么东西');
+                                    return;
+                                }
+                                await handleSignleStickerDownloadAndSend(part[2]);
+                            }
+                        }, 30);
+
+                    }
+                } else if (msg === '2') {
+                    await handleStickerDownloadAndSend();
+                } else {
+                    s.reply('已取消');
+                    return;
+                }
+
+            }
+        }, 30);
+    }
+    async function handleOthers() {
+        if (!param2) {
+            s.reply('请使用tg对机器人发送\nsticks\n获取绑定码');
+            return;
+        }
+        if (param2.length > 15) {
+            await bindUser();
+        }
+    }
+    async function bindUser() {
+        const keys = await usrDb.keys();
+        for (const key of keys) {
+            const storedRandom = await usrDb.get(key);
+            if (storedRandom === param2) {
+                await usrDb.set(key, userId);
+                s.reply(`tg:${key}qq:${userId}已经成功绑定`);
+                break;
+            }
+        }
+    }
+    let platformIsTg = platform === 'pgm' || platform === 'tgBot';
+    await handlePlatform(platformIsTg);
 }
