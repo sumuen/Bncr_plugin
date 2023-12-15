@@ -55,7 +55,9 @@ s.reply('1:进入连续发送模式\n2:发送贴纸包全部贴纸\nq:退出')
     }
 ```
 
+## Bncr_ChatGPT.js
 
+[全新的ai chat,支持个人prompt的增删改查,他人不可见](https://github.com/sumuen/Bncr_plugin/commit/7accd8a5faa443eea21fd6e85cc8924d55b72fb2)
 
 ## btc.js
 
