@@ -5,6 +5,7 @@
  * @version 1.0.0
  * @description gemini聊天
  * @rule ^gemini ([\s\S]+)$
+ * @rule ^识图$
  * @admin false
  * @public false
  * @priority 9999
@@ -12,13 +13,17 @@
  * @disable false
  */
 module.exports = async s => {
+    const got = require('got');
+    const fs = require('fs');
+    const { randomUUID } = require("crypto");
+    const path = require('path');
     const { GoogleGenerativeAI } = require("@google/generative-ai");
     const geminiStorage = new BncrDB('gemini');
     const apiKey = await geminiStorage.get('apiKey');
     // Access your API key as an environment variable (see "Set up your API key" above)
     const genAI = new GoogleGenerativeAI(apiKey);
 
-    async function run() {
+    async function text() {
         // For text-only input, use the gemini-pro model
         const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
@@ -37,7 +42,6 @@ module.exports = async s => {
                 maxOutputTokens: 100,
             },
         })
-        const msg = s.param(1);
         const result = await chat.sendMessage(msg);
         const response = await result.response;
         const text = response.text();
@@ -62,6 +66,72 @@ module.exports = async s => {
             s.reply(text);
         }
     }
+    function fileToGenerativePart(path, mimeType) {
+    return {
+        inlineData: {
+            data: Buffer.from(fs.readFileSync(path)).toString("base64"),
+            mimeType
+        },
+    };
+}
+    async function imageAI(){
+        s.reply(`请发送一张图片`)
+        let a = await s.waitInput(() => { }, 60);
+        if (!a) {
+            s.reply("超时。");
+            return;
+        };
+        a = a.getMsg();
+        let regex = /http/g;
 
-    run();
+        // 使用match()函数检查字符串是否包含匹配的URL
+        let matchedUrls = a.match(regex);
+        // 如果字符串包含匹配的URL，保存图片并发送
+        if (matchedUrls) {
+            //通过got获取图片并保存到本地
+            const { body } = await got.get(a, { responseType: 'buffer' });
+            const imgpath = path.join("/bncr/BncrData/public/", randomUUID()+'.jpg')
+            console.log(imgpath)
+            fs.writeFile(imgpath, body, (err) => {
+                if (err) {
+                    console.error('写入文件时出错:', err);
+                    return;
+                }
+            });
+            await sleep(1000)
+            const model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
+
+            const prompt = "你看到了什么?";
+          
+            const imageParts = [
+                fileToGenerativePart(imgpath, "image/jpeg"),
+            ];
+            const result = await model.generateContent([prompt, ...imageParts]);
+            const response = await result.response;
+            const text = response.text();
+            console.log(text);
+            s.reply(text)
+            fs.unlinkSync(imgpath)
+
+        } else {
+            s.reply(`无法识别图片`)
+        }
+    }
+    function fileToGenerativePart(path, mimeType) {
+        return {
+            inlineData: {
+                data: Buffer.from(fs.readFileSync(path)).toString("base64"),
+                mimeType
+            },
+        };
+    }
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+    const msg = s.param(1);
+    if (msg) {
+        text();
+    } else {
+        await imageAI();
+    }
 }
