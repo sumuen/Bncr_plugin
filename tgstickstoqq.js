@@ -9,7 +9,9 @@
  * @admin false
  * @origin muzi
  * @disable false
+ 请自行修改外部http地址
  */
+
 const got = require('got');
 const path = require('path');
 const fs = require('fs').promises;
@@ -69,7 +71,8 @@ module.exports = async (s) => {
                 await convertTgsFiles(folder, resolution, fps);
             } else if (files[0].endsWith('.webm')) {
                 await convertFolderToGifs(folder);
-            } else if (files[0].endsWith('.webp')) {
+            }     // 检查文件是否以 '.webp' 结尾 或者 没有后缀
+            else if (files[0].endsWith('.webp') || !files[0].includes('.')) {
                 await renameWebpToGif(folder);
             }
         } catch (error) {
@@ -80,10 +83,12 @@ module.exports = async (s) => {
     async function renameWebpToGif(folder) {
         try {
             const files = await fs.readdir(folder);
-            const webpFiles = files.filter(file => file.endsWith('.webp'));
+            const webpFiles = files.filter(file => file.endsWith('.webp') || !file.includes('.'));
             for (let file of webpFiles) {
                 const oldPath = path.join(folder, file);
-                const newPath = path.join(folder, file.replace('.webp', '.gif'));
+                const newPath = file.endsWith('.webp')
+                    ? path.join(folder, file.replace('.webp', '.gif'))
+                    : path.join(folder, file + '.gif');
                 await fs.rename(oldPath, newPath);
             }
 
@@ -96,7 +101,7 @@ module.exports = async (s) => {
     async function sendStickersToUser(folder, sticker_set_name) {
         try {
             const userId = await usrDb.get(s.getUserId());
-            s.reply(`开始发送给${userId}`);
+            s.reply(`${sticker_set_name}开始发送给${userId}`);
             await sendStickers(userId, folder, sticker_set_name);
         } catch (error) {
             console.error(`Error sending stickers: ${error.message}`);
@@ -205,6 +210,15 @@ module.exports = async (s) => {
 
             // 过滤出 .gif 文件
             const gifFiles = files.filter(file => file.endsWith('.gif'));
+            //如果没有。gif文件，抛出错误并删除文件夹
+            if (gifFiles.length === 0) {
+                console.log(`Attempting to delete folder: ${folder}`);
+                await fs.rm(folder, { recursive: true });
+                console.log(`Folder deleted successfully: ${folder}`);
+                //删除错误文件夹并重新下载发送
+                await handleStickerDownloadAndSend();
+                throw new Error(`No .gif files found in ${folder}`);
+            }
 
             // 创建一个senders数组，你可以根据需要添加更多的发送者
             const senders = [{
@@ -240,6 +254,7 @@ module.exports = async (s) => {
             console.log('All stickers sent');
 
         } catch (error) {
+            s.reply(`Error sending stickers: ${error.message}`);
             console.error(`Error: ${error.message}`);
         }
     }
