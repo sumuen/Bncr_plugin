@@ -16,9 +16,10 @@
 todo
 1. 添加对话模型引入 ✔
 2. 添加对话模型选择 gpt3.5 gpt4 gpts(联网能力) ✔
+12.19 添加backendUrl，用于调用pandoraToV1Api ✔
 */
 
-let api = {};
+
 
 module.exports = async s => {
     /* 补全依赖 */
@@ -31,33 +32,27 @@ module.exports = async s => {
     const chatGPTStorage = new BncrDB('ChatGPT');
     const apiKey = await chatGPTStorage.get('apiKey');
     const apiBaseUrl = await chatGPTStorage.get('apiBaseUrl');
+    const backendUrl = await chatGPTStorage.get('backendUrl');
     const user = s.getUserId()
     if (!apiKey) return s.reply("请输入set ChatGPT apiKey设置apiKey");
     if (!apiBaseUrl) return s.reply("请输入set ChatGPT apiBaseUrl设置apiBaseUrl");
+    if (!backendUrl) return s.reply("请输入set ChatGPT backendUrl 设置imgUrl，比如：http://xx:port/v1,结尾不要带/参考项目https://github.com/Ink-Osier/PandoraToV1Api");
     //console.log(`param`, s.param(1));
     const { ChatGPTAPI } = await import('chatgpt');
-    api = new ChatGPTAPI({
-        apiKey: apiKey,
-        apiBaseUrl: apiBaseUrl,
-        completionParams: {
-            model: 'gpt-4-32k'
-        }
-    });
+    const platform = s.getFrom();
+    let api = {};
+    api = initializeChatGPTAPI(apiKey, backendUrl, 'gpt-4');
     let opt = {
         timeoutMs: 60 * 1000,
     };
     if (s.param(1) === '画图') {
-        const platform = s.getFrom();
-        const userId = s.getUserId();
-        const imgUrl = await chatGPTStorage.get('imgUrl');
-        if (!imgUrl) return s.reply("请输入set ChatGPT imgUrl设置imgUrl，比如：http://xx:port/v1/images/generations,参考项目https://github.com/Ink-Osier/PandoraToV1Api");
         const body = {
             "model": "gpt-4-s",
             prompt: `请你给我一张${s.param(2)}的图片`
         };
         const auth = `Bearer ${apiKey}`;
         try {
-            const response = await got.post(imgUrl, {
+            const response = await got.post(backendUrl + '/images/generations', {
                 json: body,
                 headers: {
                     'Authorization': auth
@@ -68,21 +63,8 @@ module.exports = async s => {
                 console.log(response.body);
                 throw new Error(`Missing URL in response data: ${response.body}`);
             }
-
-            //console.log(data,typeof data);
             let dataUrl = data[0].url;
-            if (platform === 'qq') s.reply(`[CQ:image,file=${dataUrl}]`);
-            else if (platform === 'ntqq') {
-                const obj = {
-                    platform: 'ntqq',
-                    type: 'image',
-                    msg: ``,
-                    path: dataUrl,
-                    groupId: s.getGroupId(),
-                }
-                //console.log(obj);
-                await sysMethod.push(obj);
-            }
+            sendImg(platform, dataUrl)
         } catch (error) {
             s.reply(`Error processing your request: ${error.message}`);
         }
@@ -92,7 +74,6 @@ module.exports = async s => {
         let prompts = []
         try {
             prompts = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
-            //console.log(prompts);
         } catch (error) {
             console.log(error);
         }
@@ -246,48 +227,141 @@ module.exports = async s => {
         let history = [{ role: 'system', content: prompt.prompt + '，另外，输出字符限制，输出50-100字' }]
         s.reply(`Let me see...`);
         history.push({ role: 'user', content: s.param(2) });
+        let response
         try {
-            let response = await api.sendMessage(JSON.stringify(history), opt);
+            response = await api.sendMessage(JSON.stringify(history), opt);
             history.push({ role: 'assistant', content: response.text });
-            await s.reply(response.text);
+            console.log(response);
+            if (isValidFormat(response.text)) {
+                const result = processText(response.text);
+                const link = result.link;
+                const lastLine = result.lastLine;
+                sendImg(platform, link);
+                s.reply(lastLine);
+            }
+            else {
+                let text = removeUrls(response.text);
+                s.reply(text);
+            }
+            await continuousDialogue(api, opt);
         }
         catch (error) {
-            console.log(error);
-            s.reply(error + "对话结束。");
+            handleError(error);
+            //如果错误信息包含OpenAI error 429，使用gpt3.5模型继续调用
+            if (error.toString().indexOf('OpenAI error 429') !== -1) {
+                s.reply("gpt4模型调用失败，正在使用gpt3.5模型");
+                api = initializeChatGPTAPI(apiKey, apiBaseUrl, 'gpt-3.5-turbo');
+                try {
+                    response = await api.sendMessage(JSON.stringify(history), opt);
+                    history.push({ role: 'assistant', content: response.text });
+                    console.log(response);
+                    await s.reply(response.text);
+                    await continuousDialogue(api, opt);
+                }
+                catch (error) {
+                    handleError(error);
+                    return;
+                }
 
-            if (response) {
-                console.log(response);
-            } else {
-                console.log("Response was not defined.");
+            }
+            return;
+        }
+        async function continuousDialogue(api, opt) {
+            while (true) {
+                let input = await s.waitInput(() => { }, 60);
+                if (!input) {
+                    s.reply("对话超时。");
+                    break;
+                }
+
+                input = input.getMsg();
+                if (input.toLowerCase() === 'q') {
+                    s.reply("对话结束。");
+                    break;
+                }
+
+                history.push({ role: 'user', content: input });
+
+                let response;
+                try {
+                    response = await api.sendMessage(JSON.stringify(history), opt);
+                    if (response) {
+                        s.reply(response.text);
+                        history.push({ role: 'assistant', content: response.text });
+                    } else {
+                        s.reply("没有收到回答。");
+                    }
+                } catch (error) {
+                    handleError(error);
+                    return;
+                }
             }
         }
-        while (true) { // 进入持续对话模式
-            let input = await s.waitInput(() => { }, 60);
-            if (!input) {
-                s.reply("对话超时。");
-                break;
-            };
-            input = input.getMsg();
-            if (input.toLowerCase() === 'q') { // 用户可以通过输入 'exit' 来退出对话
-                s.reply("对话结束。");
-                break;
-            }
-            //console.log(history);
+    }
+    function removeUrls(text) {
+        // 正则表达式匹配大多数网址格式
+        const urlRegex = /https?:\/\/[^\s]+|www\.[^\s]+/gi;
 
-            // 更新历史记录
-            history.push({ role: 'user', content: input });
+        // 将所有匹配到的网址替换为空字符串
+        return text.replace(urlRegex, '');
+    }
+    function isValidFormat(text) {
+        // 正则表达式来检测文本格式
+        // 检测图像链接格式
+        const imageRegex = /!\[image\]\(https?:\/\/.*?\)/;
+        // 检测下载链接格式
+        const downloadLinkRegex = /\[下载链接\]\(https?:\/\/.*?\)/;
 
-            // 发送请求到 ChatGPT API，并包含历史记录
-            let response = await api.sendMessage(JSON.stringify(history), opt);
-            //console.log(response);
-            // 处理响应
-            if (response) {
-                s.reply(response.text);
-                // 将 ChatGPT 的回答也添加到历史记录中
-                history.push({ role: 'assistant', content: response.text });
-            } else {
-                s.reply("没有收到回答。");
+        return imageRegex.test(text) && downloadLinkRegex.test(text);
+    }
+    function processText(text) {
+        // 将文本按行分割
+        const lines = text.split('\n');
+        // 初始化变量来存储链接和最后一行文本
+        let link = '';
+        let lastLine = '';
+        // 遍历每一行来查找链接
+        lines.forEach(line => {
+            if (line.includes('[下载链接]')) {
+                // 提取链接
+                const linkMatch = line.match(/\((.*?)\)/);
+                if (linkMatch && linkMatch.length > 1) {
+                    link = linkMatch[1];
+                }
             }
+        });
+        // 获取最后一行文本
+        if (lines.length > 0) {
+            lastLine = lines[lines.length - 1];
+        }
+        return { link, lastLine };
+    }
+    function initializeChatGPTAPI(apiKey, baseUrl, model) {
+        return new ChatGPTAPI({
+            apiKey: apiKey,
+            apiBaseUrl: baseUrl,
+            completionParams: {
+                model: model
+            }
+        });
+    }
+    function handleError(error) {
+        console.log(error);
+        const errorMessage = "发生错误: " + error;
+        s.reply(errorMessage);
+    }
+    function sendImg(platform, url) {
+        if (platform === 'qq') s.reply(`[CQ:image,file=${url}]`);
+        else if (platform === 'ntqq') {
+            const obj = {
+                platform: 'ntqq',
+                type: 'image',
+                msg: ``,
+                path: url,
+                groupId: s.getGroupId(),
+            }
+            //console.log(obj);
+            sysMethod.push(obj);
         }
     }
 };
