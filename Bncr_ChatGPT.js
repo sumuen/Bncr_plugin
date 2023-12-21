@@ -2,7 +2,7 @@
  * @author sumuen
  * @name Bncr_ChatGPT
  * @origin sumuen
- * @version 1.1.5
+ * @version 1.1.6
  * @description ChatGpt聊天 accessToken 版本
  * @rule ^(ai) ([\s\S]+)$
  * @rule ^(ai)$
@@ -177,7 +177,7 @@ module.exports = async s => {
             });
             let data = JSON.parse(response.body).data;
             if (!data || !data[0] || !data[0].url) {
-                throw new Error(`Data validation error in response`);
+                throw new Error(`Data validation error in response，${response.body}}`);
             }
             let dataUrl = data[0].url;
             sendImg(platform, dataUrl)
@@ -410,9 +410,9 @@ module.exports = async s => {
     }
     function handleError(error) {
         console.log(error);
-        error = unicodeToChinese(error);
-        const errorMessage = "发生错误: " + error;
-        s.reply(errorMessage + name);
+        let errorMessage = error.message || error.toString();
+        errorMessage = unicodeToChinese(errorMessage);
+        s.reply("发生错误: " + errorMessage + name);
     }
     function sendImg(platform, url) {
         if (platform === 'qq') s.reply(`[CQ:image,file=${url}]`);
