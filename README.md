@@ -103,3 +103,6 @@ s.reply('1:进入连续发送模式\n2:发送贴纸包全部贴纸\nq:退出')
 
 ![image-20231210213409772](http://easyimage.muzi.studio/i/2023/12/10/zalrzb-0.png)
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=sumuen/Bncr_plugin&type=Date)](https://star-history.com/#sumuen/Bncr_plugin&Date)
