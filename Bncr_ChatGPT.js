@@ -1,10 +1,11 @@
 /**
- * @author Aming
+ * @author sumuen
  * @name Bncr_ChatGPT
- * @origin Bncr团队
- * @version 1.0.0
+ * @origin sumuen
+ * @version 1.1.1
  * @description ChatGpt聊天 accessToken 版本
  * @rule ^(ai) ([\s\S]+)$
+ * @rule ^(ai)$
  * @rule ^(画图) ([\s\S]+)$
  * @admin false
  * @public false
@@ -46,36 +47,14 @@ module.exports = async s => {
         timeoutMs: 60 * 1000,
     };
     if (s.param(1) === '画图') {
-        const body = {
-            "model": "gpt-4-s",
-            prompt: `请你给我一张${s.param(2)}的图片`
-        };
-        const auth = `Bearer ${apiKey}`;
-        try {
-            const response = await got.post(backendUrl + '/images/generations', {
-                json: body,
-                headers: {
-                    'Authorization': auth
-                }
-            });
-            let data = JSON.parse(response.body).data;
-            if (!data || !data[0] || !data[0].url) {
-                console.log(response.body);
-                throw new Error(`Missing URL in response data: ${response.body}`);
-            }
-            let dataUrl = data[0].url;
-            sendImg(platform, dataUrl)
-        } catch (error) {
-            s.reply(`Error processing your request: ${error.message}`);
-        }
-        return;
+        await aiDraw();
     }
     else if (s.param(1) === 'ai') {
         let prompts = []
         try {
             prompts = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
         } catch (error) {
-            console.log(error);
+            handleError(error);
         }
         let ownPrompts = []
         let promptStr = `| 编号  | 角色  \n`
@@ -86,6 +65,11 @@ module.exports = async s => {
             promptStr += `| ${num}  | ${item.act}  \n`
             num++;
         });
+        if (!s.param(2)) {
+            s.reply(promptStr);
+            await handleUserActions(ownPrompts, prompts);
+            return;
+        }
         promptStr += `输入a管理个人自定义prompt，q退出。`
         s.reply(promptStr);
         let promptIndex = await s.waitInput(() => { }, 60);
@@ -95,129 +79,7 @@ module.exports = async s => {
         }
         promptIndex = promptIndex.getMsg();
         if (promptIndex.toLowerCase() === 'a') {
-            s.reply(`1.添加prompt \n2.删除prompt \n3.修改prompt \n4.查看prompt`);
-            let action = await s.waitInput(() => { }, 60);
-            if (!action) {
-                s.reply("对话结束。");
-                return;
-            }
-            action = action.getMsg();
-            if (action === '1') {
-                s.reply(`请输入prompt的角色`);
-                let actor = await s.waitInput(() => { }, 60);
-                if (!actor) {
-                    s.reply("对话结束。");
-                    return;
-                }
-                actor = actor.getMsg();
-                s.reply(`请输入prompt的内容，比如：我想让你扮演讲故事的角色。您将想出引人入胜、富有想象力和吸引观众的有趣故事。`);
-                let a = await s.waitInput(() => { }, 60);
-                if (!a) {
-                    s.reply("对话结束。");
-                    return;
-                }
-                s.reply(`是否使用ai丰富您的prompt？y/n`);
-                let useAI = await s.waitInput(() => { }, 60);
-                if (!useAI) {
-                    s.reply("对话结束。");
-                    return;
-                }
-                useAI = useAI.getMsg();
-                if (useAI.toLowerCase() === 'y') {
-                    let history = [{ role: 'user', content: `我希望你成为我的提示创建者。您的目标是帮助我设计出最符合我需求的提示，多余则删除，不足则丰富，同时审查不健康因素。提示将由你 ChatGPT 使用,提示应清晰、简洁，易于理解,我的提示是---${a.getMsg()}` }]
-                    let response = await api.sendMessage(JSON.stringify(history), opt);
-                    await s.reply(response.text);
-                    s.reply(`prompt是否认同？y/n`)
-                    let c = await s.waitInput(() => { }, 60);
-                    if (!c) return;
-                    else if (c.getMsg() === 'n') {
-                        let d = 'n'
-                        while (d === 'n') {
-                            let response = await api.sendMessage(JSON.stringify(history), opt);
-                            await s.reply(response.text, `已退出`);
-                            s.reply(`prompt是否认同？y/n`)
-                            d = await s.waitInput(() => { }, 60);
-                        }
-                    }
-                    s.reply(`请输入新的prompt`)
-                    let e = await s.waitInput(() => { }, 60);
-                    e = e.getMsg();
-                    prompts.push({ act: actor, prompt: e, user: user });
-                    fs.writeFileSync(fullPath, JSON.stringify(prompts));
-                    s.reply("添加成功");
-                    return;
-                }
-                else if (useAI.toLowerCase() === 'n') {
-                    let e = a.getMsg();
-                    prompts.push({ act: actor, prompt: e, user: user });
-                    fs.writeFileSync(fullPath, JSON.stringify(prompts));
-                    s.reply("添加成功");
-                    return;
-                }
-
-            }
-            else if (action === '2') {
-                s.reply(`请输入prompt的编号`);
-                let index = await s.waitInput(() => { }, 60);
-                if (!index) {
-                    s.reply("对话结束。");
-                    return;
-                }
-                index = index.getMsg();
-                delPrompt = ownPrompts[index];
-                //find delPrompt in prompts
-                prompts.forEach((item, index) => {
-                    if (item.act === delPrompt.act && item.prompt === delPrompt.prompt && item.user === user) {
-                        prompts.splice(index, 1);
-                    }
-                });
-                fs.writeFileSync(fullPath, JSON.stringify(prompts));
-                s.reply("删除成功");
-                return;
-            }
-            else if (action === '3') {
-                s.reply(`请输入prompt的编号`);
-                let index = await s.waitInput(() => { }, 60);
-                if (!index) {
-                    s.reply("对话结束。");
-                    return;
-                }
-                index = index.getMsg();
-                let changePrompt = ownPrompts[index];
-                s.reply(`${ownPrompts[index].prompt}\n请输入prompt的内容`);
-                let content = await s.waitInput(() => { }, 60);
-                if (!content) {
-                    s.reply("对话结束。");
-                    return;
-                }
-                content = content.getMsg();
-                //find changePrompt in prompts
-                prompts.forEach((item, index) => {
-                    if (item.act === changePrompt.act && item.prompt === changePrompt.prompt && item.user === user) {
-                        prompts[index].prompt = content;
-                    }
-                });
-                fs.writeFileSync(fullPath, JSON.stringify(prompts));
-                s.reply("修改成功");
-                return;
-            }
-            else if (action === '4') {
-                s.reply(`请输入prompt的编号`);
-                let index = await s.waitInput(() => { }, 60);
-                if (!index) {
-                    s.reply("对话结束。");
-                    return;
-                }
-                index = index.getMsg();
-                s.reply(`prompt的内容为：${ownPrompts[index].prompt}`);
-                return;
-            }
-            else {
-                s.reply("对话结束。");
-                return;
-            }
-
-
+            await handleUserActions(ownPrompts, prompts);
         }
         let prompt = ownPrompts[promptIndex];
         if (!prompt) {
@@ -298,10 +160,162 @@ module.exports = async s => {
             }
         }
     }
+    async function aiDraw() {
+        const body = {
+            "model": "gpt-4-s",
+            prompt: `请你给我一张${s.param(2)}的图片`
+        };
+        const auth = `Bearer ${apiKey}`;
+        try {
+            const response = await got.post(backendUrl + '/images/generations', {
+                json: body,
+                headers: {
+                    'Authorization': auth
+                }
+            });
+            let data = JSON.parse(response.body).data;
+            if (!data || !data[0] || !data[0].url) {
+                console.log(response.body);
+                throw new Error(`Missing URL in response data: ${response.body}`);
+            }
+            let dataUrl = data[0].url;
+            sendImg(platform, dataUrl)
+        } catch (error) {
+            handleError(error);
+        }
+        return;
+    }
+    async function handleUserActions(ownPrompts, prompts) {
+        s.reply(`1.添加prompt \n2.删除prompt \n3.修改prompt \n4.查看prompt`);
+        let action = await s.waitInput(() => { }, 60);
+        if (!action) {
+            s.reply("对话结束。");
+            return;
+        }
+        action = action.getMsg();
+        if (action === '1') {
+            s.reply(`请输入prompt的角色`);
+            let actor = await s.waitInput(() => { }, 60);
+            if (!actor) {
+                s.reply("对话结束。");
+                return;
+            }
+            actor = actor.getMsg();
+            s.reply(`请输入prompt的内容，比如：我想让你扮演讲故事的角色。您将想出引人入胜、富有想象力和吸引观众的有趣故事。`);
+            let a = await s.waitInput(() => { }, 60);
+            if (!a) {
+                s.reply("对话结束。");
+                return;
+            }
+            s.reply(`是否使用ai丰富您的prompt？y/n`);
+            let useAI = await s.waitInput(() => { }, 60);
+            if (!useAI) {
+                s.reply("对话结束。");
+                return;
+            }
+            useAI = useAI.getMsg();
+            if (useAI.toLowerCase() === 'y') {
+                let history = [{ role: 'user', content: `我希望你成为我的提示创建者。您的目标是帮助我设计出最符合我需求的提示，多余则删除，不足则丰富，同时审查不健康因素。提示将由你 ChatGPT 使用,提示应清晰、简洁，易于理解,我的提示是---${a.getMsg()}` }]
+                let response = await api.sendMessage(JSON.stringify(history), opt);
+                await s.reply(response.text);
+                s.reply(`prompt是否认同？y/n`)
+                let c = await s.waitInput(() => { }, 60);
+                if (!c) return;
+                else if (c.getMsg() === 'n') {
+                    let d = 'n'
+                    while (d === 'n') {
+                        let response = await api.sendMessage(JSON.stringify(history), opt);
+                        await s.reply(response.text, `已退出`);
+                        s.reply(`prompt是否认同？y/n`)
+                        d = await s.waitInput(() => { }, 60);
+                    }
+                }
+                s.reply(`请输入新的prompt`)
+                let e = await s.waitInput(() => { }, 60);
+                e = e.getMsg();
+                prompts.push({ act: actor, prompt: e, user: user });
+                fs.writeFileSync(fullPath, JSON.stringify(prompts));
+                s.reply("添加成功");
+                return;
+            }
+            else if (useAI.toLowerCase() === 'n') {
+                let e = a.getMsg();
+                prompts.push({ act: actor, prompt: e, user: user });
+                fs.writeFileSync(fullPath, JSON.stringify(prompts));
+                s.reply("添加成功");
+                return;
+            }
+
+        }
+        else if (action === '2') {
+            s.reply(`请输入prompt的编号`);
+            let index = await s.waitInput(() => { }, 60);
+            if (!index) {
+                s.reply("对话结束。");
+                return;
+            }
+            index = index.getMsg();
+            delPrompt = ownPrompts[index];
+            let exist = false;
+            //find delPrompt in prompts
+            prompts.forEach((item, index) => {
+                if (item.act === delPrompt.act && item.prompt === delPrompt.prompt && item.user === user) {
+                    prompts.splice(index, 1);
+                    exist = true;
+                }
+            });
+            fs.writeFileSync(fullPath, JSON.stringify(prompts));
+            //如果prompts中不包含delPrompt，回复删除成功，
+            //否则回复删除失败
+            if (exist) s.reply("删除成功");
+            else s.reply("删除失败");
+            return;
+        }
+        else if (action === '3') {
+            s.reply(`请输入prompt的编号`);
+            let index = await s.waitInput(() => { }, 60);
+            if (!index) {
+                s.reply("对话结束。");
+                return;
+            }
+            index = index.getMsg();
+            let changePrompt = ownPrompts[index];
+            s.reply(`${ownPrompts[index].prompt}\n请输入prompt的内容`);
+            let content = await s.waitInput(() => { }, 60);
+            if (!content) {
+                s.reply("对话结束。");
+                return;
+            }
+            content = content.getMsg();
+            //find changePrompt in prompts
+            prompts.forEach((item, index) => {
+                if (item.act === changePrompt.act && item.prompt === changePrompt.prompt && item.user === user) {
+                    prompts[index].prompt = content;
+                }
+            });
+            fs.writeFileSync(fullPath, JSON.stringify(prompts));
+            s.reply("修改成功");
+            return;
+        }
+        else if (action === '4') {
+            s.reply(`请输入prompt的编号`);
+            let index = await s.waitInput(() => { }, 60);
+            if (!index) {
+                s.reply("对话结束。");
+                return;
+            }
+            index = index.getMsg();
+            s.reply(`prompt的内容为：${ownPrompts[index].prompt}`);
+            return;
+        }
+        else {
+            s.reply("对话结束。");
+            return;
+        }
+    }
     function removeUrls(text) {
         // 正则表达式匹配大多数网址格式
         const urlRegex = /https?:\/\/[^\s]+|www\.[^\s]+/gi;
-
         // 将所有匹配到的网址替换为空字符串
         return text.replace(urlRegex, '');
     }
@@ -347,6 +361,7 @@ module.exports = async s => {
     }
     function handleError(error) {
         console.log(error);
+        error = unicodeToChinese(error);
         const errorMessage = "发生错误: " + error;
         s.reply(errorMessage);
     }
@@ -362,6 +377,21 @@ module.exports = async s => {
             }
             //console.log(obj);
             sysMethod.push(obj);
+        }
+    }
+    function isUnicode(str) {
+        // 正则表达式检查字符串是否包含Unicode转义序列
+        return /\\u[\dA-F]{4}/i.test(str);
+    }
+
+    function unicodeToChinese(text) {
+        // 将Unicode转义序列转换为普通字符串
+        if (isUnicode(text)) {
+            return text.replace(/\\u([\dA-F]{4})/gi, function (match, grp) {
+                return String.fromCharCode(parseInt(grp, 16));
+            });
+        } else {
+            return text;
         }
     }
 };
