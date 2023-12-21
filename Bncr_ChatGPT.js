@@ -94,17 +94,7 @@ module.exports = async s => {
             response = await api.sendMessage(JSON.stringify(history), opt);
             history.push({ role: 'assistant', content: response.text });
             console.log(response);
-            if (isValidFormat(response.text)) {
-                const result = processText(response.text);
-                const link = result.link;
-                const lastLine = result.lastLine;
-                sendImg(platform, link);
-                s.reply(lastLine);
-            }
-            else {
-                let text = removeUrls(response.text);
-                s.reply(text);
-            }
+            await handleResponse(response) 
             await continuousDialogue(api, opt);
         }
         catch (error) {
@@ -148,7 +138,7 @@ module.exports = async s => {
                 try {
                     response = await api.sendMessage(JSON.stringify(history), opt);
                     if (response) {
-                        s.reply(response.text);
+                        await handleResponse(response)
                         history.push({ role: 'assistant', content: response.text });
                     } else {
                         s.reply("没有收到回答。");
@@ -184,6 +174,19 @@ module.exports = async s => {
             handleError(error);
         }
         return;
+    }
+    async function handleResponse(response) {
+        if (isValidFormat(response.text)) {
+            const result = processText(response.text);
+            const link = result.link;
+            const lastLine = result.lastLine;
+            sendImg(platform, link);
+            s.reply(lastLine);
+        }
+        else {
+            let text = removeUrls(response.text);
+            s.reply(text);
+        }
     }
     async function handleUserActions(ownPrompts, prompts) {
         s.reply(`1.添加prompt \n2.删除prompt \n3.修改prompt \n4.查看prompt`);
