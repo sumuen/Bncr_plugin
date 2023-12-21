@@ -2,7 +2,7 @@
  * @author sumuen
  * @name Bncr_ChatGPT
  * @origin sumuen
- * @version 1.1.1
+ * @version 1.1.5
  * @description ChatGpt聊天 accessToken 版本
  * @rule ^(ai) ([\s\S]+)$
  * @rule ^(ai)$
@@ -17,9 +17,16 @@
 todo
 1. 添加对话模型引入 ✔
 2. 添加对话模型选择 gpt3.5 gpt4 gpts(联网能力) ✔
+3. initPrompt,发起会话调用数据库内prompt，数据库内无数据则生成，prompt为默认，修改handleUserActions，添加当前使用模型xx
+4. gpt 4 mobile 的连续对话中对于img的传递 ✔
+5. handleInput对于用户输入的img的处理 
+12.17 添加画图功能 ✔
 12.19 添加backendUrl，用于调用pandoraToV1Api ✔
+12.21 优化请求格式，实现连续对话中对于img的传递
+
 */
 
+const { error } = require('console');
 
 
 module.exports = async s => {
@@ -34,7 +41,10 @@ module.exports = async s => {
     const apiKey = await chatGPTStorage.get('apiKey');
     const apiBaseUrl = await chatGPTStorage.get('apiBaseUrl');
     const backendUrl = await chatGPTStorage.get('backendUrl');
-    const user = s.getUserId()
+    const user = s.getUserId();
+    let name = s.getUserName();
+    const groupId = s.getGroupId();
+    if (groupId !== 0) name = `-来自${name}`;
     if (!apiKey) return s.reply("请输入set ChatGPT apiKey设置apiKey");
     if (!apiBaseUrl) return s.reply("请输入set ChatGPT apiBaseUrl设置apiBaseUrl");
     if (!backendUrl) return s.reply("请输入set ChatGPT backendUrl 设置imgUrl，比如：http://xx:port/v1,结尾不要带/参考项目https://github.com/Ink-Osier/PandoraToV1Api");
@@ -74,7 +84,7 @@ module.exports = async s => {
         s.reply(promptStr);
         let promptIndex = await s.waitInput(() => { }, 60);
         if (!promptIndex || promptIndex.getMsg().toLowerCase() === 'q') {
-            s.reply("对话结束。");
+            s.reply("对话结束。", name);
             return;
         }
         promptIndex = promptIndex.getMsg();
@@ -83,18 +93,19 @@ module.exports = async s => {
         }
         let prompt = ownPrompts[promptIndex];
         if (!prompt) {
-            s.reply("对话结束。");
+            s.reply("对话结束。", name);
             return;
         }
-        let history = [{ role: 'system', content: prompt.prompt + '，另外，输出字符限制，输出50-100字' }]
+        let history = [{
+            role: 'system', content: [{ type: "text", text: prompt.prompt + '，另外，输出字符限制，输出50-100字' }]
+        }]
         s.reply(`Let me see...`);
-        history.push({ role: 'user', content: s.param(2) });
+        history.push({ role: 'user', content: [{ type: "text", text: s.param(2) }] });
         let response
         try {
             response = await api.sendMessage(JSON.stringify(history), opt);
-            history.push({ role: 'assistant', content: response.text });
             console.log(response);
-            await handleResponse(response)
+            await handleResponse(response, history)
             await continuousDialogue(api, opt);
         }
         catch (error) {
@@ -105,7 +116,7 @@ module.exports = async s => {
                 api = initializeChatGPTAPI(apiKey, apiBaseUrl, 'gpt-3.5-turbo');
                 try {
                     response = await api.sendMessage(JSON.stringify(history), opt);
-                    history.push({ role: 'assistant', content: response.text });
+                    history.push({ role: 'assistant', content: [{ type: "text", text: response.text }] });
                     console.log(response);
                     await s.reply(response.text);
                     await continuousDialogue(api, opt);
@@ -122,26 +133,27 @@ module.exports = async s => {
             while (true) {
                 let input = await s.waitInput(() => { }, 60);
                 if (!input) {
-                    s.reply("对话超时。");
+                    s.reply("对话超时。", name);
                     break;
                 }
 
                 input = input.getMsg();
                 if (input.toLowerCase() === 'q') {
-                    s.reply("对话结束。");
+                    s.reply("对话结束。", name);
                     break;
                 }
 
-                history.push({ role: 'user', content: input });
+                history.push({
+                    role: 'user', content: [{ type: "text", text: input }]
+                });
 
                 let response;
                 try {
                     response = await api.sendMessage(JSON.stringify(history), opt);
                     if (response) {
-                        await handleResponse(response)
-                        history.push({ role: 'assistant', content: response.text });
+                        await handleResponse(response, history)
                     } else {
-                        s.reply("没有收到回答。");
+                        s.reply("没有收到回答。", name);
                     }
                 } catch (error) {
                     handleError(error);
@@ -153,7 +165,7 @@ module.exports = async s => {
     async function aiDraw() {
         const body = {
             "model": "gpt-4-s",
-            prompt: `请你给我一张${s.param(2)}的图片`
+            prompt: `画图 ${s.param(2)}`
         };
         const auth = `Bearer ${apiKey}`;
         try {
@@ -165,8 +177,7 @@ module.exports = async s => {
             });
             let data = JSON.parse(response.body).data;
             if (!data || !data[0] || !data[0].url) {
-                console.log(response.body);
-                throw new Error(`Missing URL in response data: ${response.body}`);
+                throw new Error(`Data validation error in response`);
             }
             let dataUrl = data[0].url;
             sendImg(platform, dataUrl)
@@ -175,24 +186,32 @@ module.exports = async s => {
         }
         return;
     }
-    async function handleResponse(response) {
+    async function handleResponse(response, history) {
         if (isValidFormat(response.text)) {
             const result = processText(response.text);
             const link = result.link;
             const lastLine = result.lastLine;
             sendImg(platform, link);
-            s.reply(lastLine);
+            history.push({
+                role: 'assistant', content: [{ type: "image_url", image_url: { url: link } }, { type: "text", text: lastLine }]
+            });
+            s.reply(lastLine + name);
+            return history;
         }
         else {
             let text = removeUrls(response.text);
-            s.reply(text);
+            s.reply(text + name);
+            history.push({
+                role: 'assistant', content: [{ type: "text", text: text }]
+            });
+            return history;
         }
     }
     async function handleUserActions(ownPrompts, prompts) {
         s.reply(`1.添加prompt \n2.删除prompt \n3.修改prompt \n4.查看prompt`);
         let action = await s.waitInput(() => { }, 60);
         if (!action) {
-            s.reply("对话结束。");
+            s.reply("对话结束。", name);
             return;
         }
         action = action.getMsg();
@@ -200,20 +219,20 @@ module.exports = async s => {
             s.reply(`请输入prompt的角色`);
             let actor = await s.waitInput(() => { }, 60);
             if (!actor) {
-                s.reply("对话结束。");
+                s.reply("对话结束。", name);
                 return;
             }
             actor = actor.getMsg();
             s.reply(`请输入prompt的内容，比如：我想让你扮演讲故事的角色。您将想出引人入胜、富有想象力和吸引观众的有趣故事。`);
             let a = await s.waitInput(() => { }, 60);
             if (!a) {
-                s.reply("对话结束。");
+                s.reply("对话结束。", name);
                 return;
             }
             s.reply(`是否使用ai丰富您的prompt？y/n`);
             let useAI = await s.waitInput(() => { }, 60);
             if (!useAI) {
-                s.reply("对话结束。");
+                s.reply("对话结束。", name);
                 return;
             }
             useAI = useAI.getMsg();
@@ -254,7 +273,7 @@ module.exports = async s => {
             s.reply(`请输入prompt的编号`);
             let index = await s.waitInput(() => { }, 60);
             if (!index) {
-                s.reply("对话结束。");
+                s.reply("对话结束。", name);
                 return;
             }
             index = index.getMsg();
@@ -278,7 +297,7 @@ module.exports = async s => {
             s.reply(`请输入prompt的编号`);
             let index = await s.waitInput(() => { }, 60);
             if (!index) {
-                s.reply("对话结束。");
+                s.reply("对话结束。", name);
                 return;
             }
             index = index.getMsg();
@@ -286,7 +305,7 @@ module.exports = async s => {
             s.reply(`${ownPrompts[index].prompt}\n请输入prompt的内容`);
             let content = await s.waitInput(() => { }, 60);
             if (!content) {
-                s.reply("对话结束。");
+                s.reply("对话结束。", name);
                 return;
             }
             content = content.getMsg();
@@ -304,7 +323,7 @@ module.exports = async s => {
             s.reply(`请输入prompt的编号`);
             let index = await s.waitInput(() => { }, 60);
             if (!index) {
-                s.reply("对话结束。");
+                s.reply("对话结束。", name);
                 return;
             }
             index = index.getMsg();
@@ -312,7 +331,7 @@ module.exports = async s => {
             return;
         }
         else {
-            s.reply("对话结束。");
+            s.reply("对话结束。", name);
             return;
         }
     }
@@ -362,11 +381,38 @@ module.exports = async s => {
             }
         });
     }
+    async function handleInput(input) {
+        // if (platform === 'qq') {
+        // }
+        // else if (platform === 'ntqq') {
+        let regex = /http/g;
+        // 使用match()函数检查字符串是否包含匹配的URL
+        let matchedUrls = input.match(regex);
+        // 如果字符串包含匹配的URL，保存图片并发送
+        if (matchedUrls) {
+            //通过got获取图片并保存到本地
+            const { body } = await got.get(input, { responseType: 'buffer' });
+            const imgpath = path.join("/bncr/BncrData/public/", randomUUID() + '.png')
+            console.log(imgpath)
+            fs.writeFile(imgpath, body, (err) => {
+                if (err) {
+                    console.error('写入文件时出错:', err);
+                    return;
+                }
+            });
+            await sleep(1000)
+            let base64Img = imageToBase64(imgpath)
+            fs.unlinkSync(imgpath)
+            return base64Img;
+        } else {
+            return input;
+        }
+    }
     function handleError(error) {
         console.log(error);
         error = unicodeToChinese(error);
         const errorMessage = "发生错误: " + error;
-        s.reply(errorMessage);
+        s.reply(errorMessage + name);
     }
     function sendImg(platform, url) {
         if (platform === 'qq') s.reply(`[CQ:image,file=${url}]`);
@@ -395,6 +441,20 @@ module.exports = async s => {
             });
         } else {
             return text;
+        }
+    }
+    function imageToBase64(path) {
+        try {
+            // 读取文件到缓冲区
+            const imageBuffer = fs.readFileSync(path);
+
+            // 将缓冲区转换为 Base64 字符串
+            const base64Image = imageBuffer.toString('base64');
+
+            return base64Image;
+        } catch (error) {
+            handleError(error);
+            return null;
         }
     }
 };
