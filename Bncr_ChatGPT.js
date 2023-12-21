@@ -94,7 +94,7 @@ module.exports = async s => {
             response = await api.sendMessage(JSON.stringify(history), opt);
             history.push({ role: 'assistant', content: response.text });
             console.log(response);
-            await handleResponse(response) 
+            await handleResponse(response)
             await continuousDialogue(api, opt);
         }
         catch (error) {
