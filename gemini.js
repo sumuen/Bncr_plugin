@@ -2,7 +2,7 @@
  * @author muzi
  * @name gemini
  * @origin muzi
- * @version 1.0.0
+ * @version 1.0.1
  * @description gemini聊天
  * @rule ^gemini ([\s\S]+)$
  * @rule ^识图$
@@ -11,6 +11,7 @@
  * @priority 9999
  * @platform ntqq qq
  * @disable false
+ 1.0.1 增加解析图片时添加自定义prompt
  */
 module.exports = async s => {
     const got = require('got');
@@ -67,14 +68,14 @@ module.exports = async s => {
         }
     }
     function fileToGenerativePart(path, mimeType) {
-    return {
-        inlineData: {
-            data: Buffer.from(fs.readFileSync(path)).toString("base64"),
-            mimeType
-        },
-    };
-}
-    async function imageAI(){
+        return {
+            inlineData: {
+                data: Buffer.from(fs.readFileSync(path)).toString("base64"),
+                mimeType
+            },
+        };
+    }
+    async function imageAI() {
         s.reply(`请发送一张图片`)
         let a = await s.waitInput(() => { }, 60);
         if (!a) {
@@ -90,7 +91,7 @@ module.exports = async s => {
         if (matchedUrls) {
             //通过got获取图片并保存到本地
             const { body } = await got.get(a, { responseType: 'buffer' });
-            const imgpath = path.join("/bncr/BncrData/public/", randomUUID()+'.jpg')
+            const imgpath = path.join("/bncr/BncrData/public/", randomUUID() + '.jpg')
             console.log(imgpath)
             fs.writeFile(imgpath, body, (err) => {
                 if (err) {
@@ -100,9 +101,27 @@ module.exports = async s => {
             });
             await sleep(1000)
             const model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
+            s.reply(`请输入你额外的要求，\n 1.这张图片可能来自什么动漫/电影\n2.你看到了什么\n3.提取图片中的元素`)
+            let prompt = await s.waitInput(() => { }, 20)
+            if (!prompt) {
+                prompt = `你看到了什么`
+            } else {
+                prompt = prompt.getMsg()
+                switch (prompt) {
+                    case "1":
+                        prompt = "这张图片可能来自什么动漫/电影"
+                        break
+                    case "2":
+                        prompt = "你看到了什么"
+                        break
+                    case "3":
+                        prompt = "提取图片中的元素"
+                    default:
+                        break
 
-            const prompt = "你看到了什么?";
-          
+                }
+            }
+
             const imageParts = [
                 fileToGenerativePart(imgpath, "image/jpeg"),
             ];
