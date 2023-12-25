@@ -103,6 +103,12 @@ s.reply('1:进入连续发送模式\n2:发送贴纸包全部贴纸\nq:退出')
 
 ![image-20231210213409772](http://easyimage.muzi.studio/i/2023/12/10/zalrzb-0.png)
 
+## nomanpussy.js
+
+玩具脚本，我看不得个人性取向强奸所有人，所以写了这个脚本，提到`男娘`，直接飞机票，需要配合ntqq适配器，这个适配器写的很多缺陷，因为bncr的`sender`接口的限制，只能走弯路实现踢人，我也懒得改了，有兴趣的可以改一下
+
+12.25 更新，增加qq适配器的引用，如果用户在一个脚本的线程中，也能被同样接收信息的qq适配器踢出群组，但是这样qq适配器机器人就必须对群白名单，就会导致重复响应，这个问题暂时无解，我不知道该怎么办
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=sumuen/Bncr_plugin&type=Date)](https://star-history.com/#sumuen/Bncr_plugin&Date)
