@@ -179,6 +179,24 @@ module.exports = async (s) => {
                 console.error(error);
             }
         }
+        //delEnv
+        async delEnv(envId) {
+            let url = `http://${this.host}/open/envs`
+            let body = JSON.stringify([envId]);
+            let options = populateOptions(url, this.token, body);
+            try {
+                const response = await got.delete(options);
+                console.log(response.body);
+                let result = response.body;
+                if (result.code === 200) {
+                    console.log(`删除环境变量成功`);
+                } else {
+                    console.log(`删除环境变量失败`);
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
         async disableEnv(envId) {
             let url = `http://${this.host}/open/envs/disable`;
             let body = JSON.stringify([envId]);  // 创建一个包含 id 的数组
@@ -387,10 +405,12 @@ module.exports = async (s) => {
                     account.ban = (account.ban || 0) + 1;;
                     if (index > -1 && account.ban > 3) {
                         userInfo.accounts.splice(index, 1);
+                        client.delEnv(envInfo[0])
                     }
                     modified = true;
                     console.log(index, userInfo.accounts)
                     console.log(`账号 ${account.username} 的 Cookie 已失效`);
+                    await client.disableEnv(envInfo[0]);
                     senders.forEach(e => {
                         let obj = {
                             platform: keyPlatform,  // Use the platform extracted from the key
@@ -441,6 +461,7 @@ module.exports = async (s) => {
             s.reply("未绑定elm账号，请直接发送elmck");
             return;
         }
+        s.reply(`elm: 检测账号信息 \nelmgl: 饿了么账号管理 \nelmqq: 设置抢券账号 \nelmck: 查看ck `);
         //查找账户
         let userInfo = await getUserInfo();
         if (userInfo) {
@@ -935,7 +956,7 @@ module.exports = async (s) => {
             url: 'https://restapi.ele.me/eus/v5/user_detail',
             headers: {
                 Cookie: cookie,  // 使用参数 cookie 设置 Cookie 头
-                'user-agent': 'Rajax/1 Apple/iPhone9,2 iOS/14.8.1 Eleme/11.0.8 ID/50E26F2E-64B8-46BE-887A-25F7BEB4D762; IsJailbroken/1 Mozilla/5.0 (iPhone; CPU iPhone OS 14_8_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 AliApp(ELMC/11.0.8) UT4Aplus/ltracker-0.2.30.33 WindVane/8.7.2 1242x2208 PHA/2.0.0 WK (PHATemplate)',
+                'user-agent': 'Rajax/1 Apple/iPhone9,2 iOS/14.8.1 Eleme/11.0.8 ID/50E26F2E-64B8-46BE-887A-25F7BEB4D762; IsJailbroken/1 Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 AliApp(ELMC/11.0.8) UT4Aplus/ltracker-0.2.30.33 WindVane/8.7.2 1242x2208 PHA/2.0.0 WK (PHATemplate)',
                 host: 'restapi.ele.me',
             },
         };
@@ -964,7 +985,7 @@ module.exports = async (s) => {
             url: 'https://restapi.ele.me/eus/v5/user_detail',
             headers: {
                 Cookie: cookie,  // 使用全局数组中的值设置 Cookie 头
-                'user-agent': 'Rajax/1 Apple/iPhone9,2 iOS/14.8.1 Eleme/11.0.8 ID/50E26F2E-64B8-46BE-887A-25F7BEB4D762; IsJailbroken/1 Mozilla/5.0 (iPhone; CPU iPhone OS 14_8_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 AliApp(ELMC/11.0.8) UT4Aplus/ltracker-0.2.30.33 WindVane/8.7.2 1242x2208 PHA/2.0.0 WK (PHATemplate)',
+                'user-agent': 'Rajax/1 Apple/iPhone9,2 iOS/14.8.1 Eleme/11.0.8 ID/50E26F2E-64B8-46BE-887A-25F7BEB4D762; IsJailbroken/1 Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 AliApp(ELMC/11.0.8) UT4Aplus/ltracker-0.2.30.33 WindVane/8.7.2 1242x2208 PHA/2.0.0 WK (PHATemplate)',
                 host: 'restapi.ele.me',
             },
         };
