@@ -23,6 +23,7 @@ module.exports = async (s) => {
     const platform = await s.getFrom()
     const rabbit = new BncrDB("RabbitPro")
     let url = await rabbit.get("addr")
+    let time = 0
 
     let num = 2 //test
     if (url[url.length - 1] === '/') {
@@ -33,24 +34,24 @@ module.exports = async (s) => {
             s.reply("Madrabbit对接地址为空  请先对接  指令: set RabbitPro addr http://123.123.123.123:12345")
             return
         }
-        const { question, answer, includeSquare } = generateMathQuestion();
-        if (group_id.length > 2) {
-            let waitime = (includeSquare !== 0) ? 12 : 8
-            s.reply(`请在${waitime}s内完成：${question}`)
-            const answerInput = await s.waitInput(() => { }, waitime);
-            const answerInputStr = answerInput == null ? "" : answerInput.getMsg()
-            console.log(answerInputStr);
-            if (answerInput == null) {
-                s.reply("超时,已退出")
-                return
-            } else if (answerInputStr == "q" || answerInputStr == "Q") {
-                s.reply("好难不会做，呜呜呜")
-                return
-            } else if (answerInputStr !== answer.toString()) {
-                s.reply(`答错了，正确答案是${answer}不行看看脑子吧`)
-                return
-            }
-        }
+        // const { question, answer, includeSquare } = generateMathQuestion();
+        // if (group_id.length > 2) {
+        //     let waitime = (includeSquare !== 0) ? 12 : 8
+        //     s.reply(`请在${waitime}s内完成：${question}`)
+        //     const answerInput = await s.waitInput(() => { }, waitime);
+        //     const answerInputStr = answerInput == null ? "" : answerInput.getMsg()
+        //     console.log(answerInputStr);
+        //     if (answerInput == null) {
+        //         s.reply("超时,已退出")
+        //         return
+        //     } else if (answerInputStr == "q" || answerInputStr == "Q") {
+        //         s.reply("好难不会做，呜呜呜")
+        //         return
+        //     } else if (answerInputStr !== answer.toString()) {
+        //         s.reply(`答错了，正确答案是${answer}不行看看脑子吧`)
+        //         return
+        //     }
+        // }
         s.reply("请输入选项：\n1.扫🐴登录\n2.短信💡撸")
         const option = await s.waitInput(() => { }, 60);
         const optionstr = option.getMsg()
@@ -112,7 +113,9 @@ module.exports = async (s) => {
 
         return { question, answer, includeSquare };
     }
+
     async function SendSMS(phone) {
+        time ++
         const SendSMSURL = url + "/sms/sendSMS"
         let SendSMSResult = await got.post(SendSMSURL, {
             "responseType": "json",
@@ -128,8 +131,8 @@ module.exports = async (s) => {
             s.reply(`获取验证码失败，请联系管理员`)
             return
         }
-        if (SendSMSResult.message) {
-            s.reply(message)
+        if (SendSMSResult.body.success === false) {
+            await AutoCaptcha(phone)
             return
         }
         s.reply(`验证码已发送，请输入验证码：`)
@@ -144,6 +147,38 @@ module.exports = async (s) => {
         }
         VerifyCode(phone, codestr)
 
+    }
+    async function AutoCaptcha(phone) {
+        const AutoCaptchaURL = url + "/sms/AutoCaptcha"
+        let AutoCaptchaResult = await got.post(AutoCaptchaURL, {
+            "responseType": "json",
+            "timeout": 60000,
+            json: {
+                Phone: phone,
+            }
+        })
+        const AutoCaptchaResultStr = JSON.stringify(AutoCaptchaResult.body)
+        console.log('AutoCaptcha Result: ', AutoCaptchaResultStr)
+        if (AutoCaptchaResult.statusCode !== 200) {
+            s.reply(`AutoCaptcha，请联系管理员`)
+            return
+        }
+        if (AutoCaptchaResult.body.success === false) {
+            //back to sendSMS
+            time < 3 ? await SendSMS(phone) : s.reply(`无法发送验证码`)
+            return
+        }
+        s.reply(`验证码已发送，请输入验证码：`)
+        const code = await s.waitInput(() => { }, 60);
+        let codestr = code.getMsg()
+        if (code == null) {
+            s.reply("超时,已退出")
+            return
+        } else if (codestr == "q" || codestr == "Q") {
+            s.reply("已退出")
+            return
+        }
+        VerifyCode(phone, codestr)
     }
     async function GenQrCode() {
         let GenQrCodeUrl = url + "/api/GenQrCode"
@@ -264,7 +299,6 @@ module.exports = async (s) => {
         console.log('getck Result: ', ckResult)
         let ck = ckResult.data.ck
         if (!ck) {
-            s.reply('登陆失败，请确认是否是在二维码有效期内登陆。实在没办法就联系管理员吧')
             return
         }
         let platform = s.getFrom();
