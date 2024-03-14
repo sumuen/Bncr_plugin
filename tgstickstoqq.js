@@ -9,17 +9,15 @@
  * @admin false
  * @origin muzi
  * @disable false
- 请自行修改外部http地址
  */
-
 const got = require('got');
 const path = require('path');
 const fs = require('fs').promises;
 const ffmpeg = require('fluent-ffmpeg');
 const { spawn, exec } = require('child_process');
 const usrDb = new BncrDB("tg2qq");
-const Token = sysMethod.config.tgBot.token;
 const { randomUUID } = require('crypto');
+const { log } = require('console');
 let sticker_set_name
 let saveFolder
 module.exports = async (s) => {
@@ -27,15 +25,18 @@ module.exports = async (s) => {
     const platform = s.getFrom();
     const userId = s.getUserId();
     console.log(platform);
+    const Token = await usrDb.get("token");
     const baseURL = `https://api.telegram.org/bot${Token}/`;
     async function downloadSticker(file_id, saveFolder) {
+        console.log(baseURL);
+
         const fileResponse = await got.get(`${baseURL}getFile`, {
             searchParams: {
                 file_id: file_id
             },
             responseType: 'json'
         });
-
+        console.log(fileResponse.body);
         const file_path = fileResponse.body.result.file_path;
         console.log(`Downloading ${file_id}...${file_path}`);
         const fileURL = `https://api.telegram.org/file/bot${Token}/${file_path}`;
@@ -51,6 +52,8 @@ module.exports = async (s) => {
                 searchParams: { name: sticker_set_name },
                 responseType: 'json'
             });
+            console.log(baseURL);
+            console.log(response.body);
             const stickers = response.body.result.stickers;
             const downloadPromises = stickers.map(sticker => downloadSticker(sticker.file_id, saveFolder));
             await Promise.all(downloadPromises);
@@ -101,7 +104,8 @@ module.exports = async (s) => {
     async function sendStickersToUser(folder, sticker_set_name) {
         try {
             const userId = await usrDb.get(s.getUserId());
-            s.reply(`${sticker_set_name}开始发送给${userId}`);
+            let sendName = (sticker_set_name === "tmpSticker") ? "" : sticker_set_name;
+            s.reply(`${sendName}开始发送给${userId}`);
             await sendStickers(userId, folder, sticker_set_name);
         } catch (error) {
             console.error(`Error sending stickers: ${error.message}`);
