@@ -6,10 +6,9 @@
  * @description ChatGpt聊天 accessToken 版本
  * @rule ^(ai) ([\s\S]+)$
  * @rule ^(ai)$
- * @rule ^(画图) ([\s\S]+)$
  * @admin false
  * @public false
- * @priority 9999
+ * @priority 10
  * @platform ntqq qq
  * @disable false
  */
@@ -19,16 +18,14 @@ todo
 2. 添加对话模型选择 gpt3.5 gpt4 gpts(联网能力) ✔
 3. initPrompt,发起会话调用数据库内prompt，数据库内无数据则生成，prompt为默认，修改handleUserActions，添加当前使用模型xx
 4. gpt 4 mobile 的连续对话中对于img的传递 ✔
-5. handleInput对于用户输入的img的处理 
+5. handleInput对于用户输入的img的处理,如何修改ntqq适配器使其接收图片的输出为[CQ:image,file=xxx] ✔
+6. 取消模型的选择，加入命令ai model ,并在第一条输出中提示当前使用模型
 12.17 添加画图功能 ✔
 12.19 添加backendUrl，用于调用pandoraToV1Api ✔
 12.21 优化请求格式，实现连续对话中对于img的传递
+2024.2.8 取消画图 backendurl  * @rule ^(画图) ([\s\S]+)$
 
 */
-
-const { error } = require('console');
-
-
 module.exports = async s => {
     /* 补全依赖 */
     await sysMethod.testModule(['chatgpt'], { install: true });
@@ -52,7 +49,7 @@ module.exports = async s => {
     const { ChatGPTAPI } = await import('chatgpt');
     const platform = s.getFrom();
     let api = {};
-    api = initializeChatGPTAPI(apiKey, backendUrl, 'gpt-4');
+    api = initializeChatGPTAPI(apiKey, apiBaseUrl, 'gpt-4');
     let opt = {
         timeoutMs: 60 * 1000,
     };
@@ -80,17 +77,23 @@ module.exports = async s => {
             await handleUserActions(ownPrompts, prompts);
             return;
         }
-        promptStr += `输入a管理个人自定义prompt，q退出。`
+        promptStr += `3秒内自动选择默认promot\n输入a管理个人自定义prompt，q退出。`
         s.reply(promptStr);
-        let promptIndex = await s.waitInput(() => { }, 60);
-        if (!promptIndex || promptIndex.getMsg().toLowerCase() === 'q') {
+        let promptIndex = await s.waitInput(() => { }, 3);
+        console.log(promptIndex)
+        if (promptIndex && promptIndex.getMsg().toLowerCase() === 'q') {
             s.reply("对话结束。", name);
             return;
         }
-        promptIndex = promptIndex.getMsg();
-        if (promptIndex.toLowerCase() === 'a') {
-            await handleUserActions(ownPrompts, prompts);
+        if (!promptIndex) {
+            promptIndex = 0;
+        } else {
+            promptIndex = promptIndex.getMsg();
+            if (promptIndex.toLowerCase() === 'a') {
+                await handleUserActions(ownPrompts, prompts);
+            }
         }
+
         let prompt = ownPrompts[promptIndex];
         if (!prompt) {
             s.reply("对话结束。", name);
@@ -187,6 +190,7 @@ module.exports = async s => {
         return;
     }
     async function handleResponse(response, history) {
+        console.log(response);
         if (isValidFormat(response.text)) {
             const result = processText(response.text);
             const link = result.link;
