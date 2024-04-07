@@ -6,6 +6,7 @@
  * @description ChatGpt聊天 accessToken 版本
  * @rule ^(ai) ([\s\S]+)$
  * @rule ^(ai)$
+ * @rule ^(yy) ([\s\S]+)$
  * @admin false
  * @public false
  * @priority 10
@@ -32,6 +33,7 @@ module.exports = async s => {
     const fs = require('fs');
     const path = require('path');
     const got = require('got');
+    const { randomUUID } = require('crypto');
     const promptFilePath = './mod/prompts.json';
     const fullPath = path.join(__dirname, promptFilePath);
     const chatGPTStorage = new BncrDB('ChatGPT');
@@ -55,6 +57,11 @@ module.exports = async s => {
     };
     if (s.param(1) === '画图') {
         await aiDraw();
+        return;
+    }
+    if (s.param(1) === 'yy') {
+        await aiSpeech(s.param(2));
+        return;
     }
     else if (s.param(1) === 'ai') {
         let prompts = []
@@ -184,6 +191,36 @@ module.exports = async s => {
             }
             let dataUrl = data[0].url;
             sendImg(platform, dataUrl)
+        } catch (error) {
+            handleError(error);
+        }
+        return;
+    }
+    async function aiSpeech(text) {
+        const body = {
+            "model": "tts-1",
+            "input": text,
+            "voice": "echo",//alloy fable onyx nova shimmer
+            "response_format": "mp3"
+        }
+        const auth = `Bearer ${apiKey}`;
+        try {
+            const response = await got.post(backendUrl + '/audio/speech', {
+                json: body,
+                headers: {
+                    'Authorization': auth
+                },
+                responseType: 'buffer',
+
+            });
+            console.log(response)
+            //获取响应acc音频
+            let rawBody = response.rawBody;
+            if (!rawBody) {
+                throw new Error(`Data validation error in response，${response.body}}`);
+            }
+            let url = await handleAudioResponse(rawBody);
+            sendAudio(platform, url)
         } catch (error) {
             handleError(error);
         }
@@ -412,6 +449,21 @@ module.exports = async s => {
             return input;
         }
     }
+    async function handleAudioResponse(response) {
+        // 保存音频文件handleAudioResponse
+        const fileId = randomUUID() + '.mp3'
+        const audioPath = path.join("/bncr/BncrData/public/", fileId);
+        fs.writeFile(audioPath, response, (err) => {
+            if (err) {
+                console.error('写入文件时出错:', err);
+                return;
+            }
+        });
+        let url = `http://172.17.0.1:9090/public/${fileId}`;
+        console.log(audioPath, url);
+
+        return url;
+    }
     function handleError(error) {
         console.log(error);
         let errorMessage = error.message || error.toString();
@@ -429,6 +481,20 @@ module.exports = async s => {
                 groupId: s.getGroupId(),
             }
             //console.log(obj);
+            sysMethod.push(obj);
+        }
+    }
+    function sendAudio(platform, url) {
+        if (platform === 'qq') s.reply(`[CQ:record,file=${url}]`);
+        else if (platform === 'ntqq') {
+            const obj = {
+                platform: 'ntqq',
+                type: 'record',
+                msg: ``,
+                path: url,
+                groupId: s.getGroupId(),
+            }
+            console.log(obj);
             sysMethod.push(obj);
         }
     }
