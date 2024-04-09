@@ -73,6 +73,21 @@ async function ws(ntqq) {
             const body = JSON.parse(msg);
             /* 拒绝心跳链接消息 */
             if (body.post_type === 'meta_event') return;
+            //检查是否为notice消息
+            if (body.post_type === 'notice') {
+                if (body.notice_type === 'group_recall') {
+                    let msgInfo = {
+                        userId: body.user_id + '' || '',
+                        groupId: body.group_id ? body.group_id + '' : '0',
+                        msg: `[group_recall]&operator_id=${body.operator_id || ""}`,
+                        msgId: body.message_id + '' || '',
+
+                    };
+                    console.log('msg', msg, '最终消息：', msgInfo);
+                    ntqq.receive(msgInfo);
+                }
+                return;
+            }
             /* 不是消息退出 */
             if (!body.post_type || body.post_type !== 'message') return;
             if (body.post_type !== 'meta_event' || body.meta_event_type !== 'heartbeat') {
@@ -91,10 +106,11 @@ async function ws(ntqq) {
             }
             let msgInfo = {
                 userId: body.user_id + '' || '',
-                userName: body.sender.nickname || '',  // 注意: 在新的消息格式中，可能需要进一步解析sender字段来获取nickname。
+                userName: body.sender.nickname || '',  
                 groupId: body.group_id ? body.group_id + '' : '0',
-                groupName: body.group_name || '',  // 注意: 根据新的消息格式，您可能需要从其他字段获取这些信息。
+                groupName: body.group_name || '',  
                 msg: msgcontent || '',
+                msgId: body.message_id + '' || '',
             };
 
             console.log('msg', msg, '最终消息：', msgInfo);
@@ -135,7 +151,7 @@ async function ws(ntqq) {
                             "file": replyInfo.path
                         }
                     });
-                } else if (replyInfo.type === 'record') {    
+                } else if (replyInfo.type === 'record') {
                     body.params.message.push({
                         "type": "record",
                         "data": {
@@ -169,35 +185,86 @@ async function ws(ntqq) {
         /* 推送消息 */
         ntqq.push = async function (replyInfo) {
             if (replyInfo.api) {
+                //api 是多传递的参数用于踢人，见nomanpussy
                 return await this.delMsg(replyInfo);
             }
             // console.log('replyInfo', replyInfo);
             return await this.reply(replyInfo);
         };
-
-        /* 注入删除消息方法 其实为踢人*/
-        ntqq.delMsg = async function (replyInfo) {
-            console.log('delmsgreplyInfo', replyInfo);
+        /* 获取消息 */
+        ntqq.getMsg = async function (replyInfo) {
             try {
-                let group_id = replyInfo.groupId;
-                let user_id = replyInfo.userId;
+                let uuid = randomUUID();
+                let body = {
+                    action: 'get_msg',
+                    params: {
+                        message_id: replyInfo.msg,
+                    },
+                    echo: uuid,
+                };
+                console.log('ntqq获取消息', body);
+                ws.send(JSON.stringify(body));
+                return new Promise((resolve, reject) => {
+                    listArr.push({ uuid, eventS });
+                    let timeoutID = setTimeout(() => {
+                        delListens(uuid);
+                        eventS.emit(uuid, '');
+                    }, 3 * 1000);
+                    eventS.once(uuid, res => {
+                        try {
+                            delListens(uuid);
+                            clearTimeout(timeoutID);
+                            resolve(res || '');
+                        } catch (e) {
+                            console.error(e);
+                        }
+                    });
+                });
+            } catch (e) {
+                console.error('ntqq:获取消息失败', e);
+            }
+        };
+        /* 注入删除消息方法 */
+        ntqq.delMsg = async function (argsArr) {
+            try {
+                argsArr.forEach(e => {
+                    if (typeof e !== 'string' && typeof e !== 'number') return false;
                     ws.send(
                         JSON.stringify({
-                            action: 'set_group_kick',
-                            params: { 
-                                group_id: parseInt(group_id),
-                                user_id: parseInt(user_id),
-                                reject_add_request: false,
-                            },
+                            action: 'delete_msg',
+                            params: { message_id: e },
                         })
                     );
-                
+                });
                 return true;
             } catch (e) {
-                console.log('踢人异常', e);
+                console.log('ntqq撤回消息异常', e);
                 return false;
             }
         };
+        // /* 注入删除消息方法 其实为踢人*/
+        // ntqq.delMsg = async function (replyInfo) {
+        //     console.log('delmsgreplyInfo', replyInfo);
+        //     try {
+        //         let group_id = replyInfo.groupId;
+        //         let user_id = replyInfo.userId;
+        //         ws.send(
+        //             JSON.stringify({
+        //                 action: 'set_group_kick',
+        //                 params: {
+        //                     group_id: parseInt(group_id),
+        //                     user_id: parseInt(user_id),
+        //                     reject_add_request: false,
+        //                 },
+        //             })
+        //         );
+
+        //         return true;
+        //     } catch (e) {
+        //         console.log('踢人异常', e);
+        //         return false;
+        //     }
+        // };
 
     })
     /**向/api/系统路由中添加路由 */
