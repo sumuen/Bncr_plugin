@@ -2,8 +2,8 @@
  * @author sumuen
  * @name Bncr_ChatGPT
  * @origin sumuen
- * @version 1.1.6
- * @description ChatGpt聊天 accessToken 版本
+ * @version 1.2.0
+ * @description ChatGpt聊天 借助于chatgpt模块，增加tts功能
  * @rule ^(ai) ([\s\S]+)$
  * @rule ^(ai)$
  * @rule ^(yy) ([\s\S]+)$
@@ -13,7 +13,15 @@
  * @platform ntqq qq
  * @disable false
  */
+
+const { Stream } = require('stream');
+
 /* 
+默认使用gpt3.5模型，见55行，如果gpt4模型调用失败，使用gpt3.5模型继续调用
+请输入set ChatGPT apiKey设置apiKey
+请输入set ChatGPT apiBaseUrl设置apiBaseUrl
+prompt的位置为mod/prompts.json
+prompt的格式为：{act: '角色', prompt: '内容', user: '用户id'}
 todo
 1. 添加对话模型引入 ✔
 2. 添加对话模型选择 gpt3.5 gpt4 gpts(联网能力) ✔
@@ -24,12 +32,11 @@ todo
 12.17 添加画图功能 ✔
 12.19 添加backendUrl，用于调用pandoraToV1Api ✔
 12.21 优化请求格式，实现连续对话中对于img的传递
-2024.2.8 取消画图 backendurl  * @rule ^(画图) ([\s\S]+)$
-
+2024.2.8 取消画图 backendurl  * @rule ^(画图) ([\s\S]+)$ ✔
+2024.4.10 添加tts功能* @rule ^(yy) ([\s\S]+)$ ✔,重写调用chatgpt模块，got发送请求
 */
 module.exports = async s => {
     /* 补全依赖 */
-    await sysMethod.testModule(['chatgpt'], { install: true });
     const fs = require('fs');
     const path = require('path');
     const got = require('got');
@@ -39,26 +46,17 @@ module.exports = async s => {
     const chatGPTStorage = new BncrDB('ChatGPT');
     const apiKey = await chatGPTStorage.get('apiKey');
     const apiBaseUrl = await chatGPTStorage.get('apiBaseUrl');
-    const backendUrl = await chatGPTStorage.get('backendUrl');
     const user = s.getUserId();
     let name = s.getUserName();
     const groupId = s.getGroupId();
+    const platform = s.getFrom();
+    const gptAPI = initializeChatGPTAPI(apiKey, apiBaseUrl, "gpt-3.5-turbo");
     if (groupId !== 0) name = `-来自${name}`;
     if (!apiKey) return s.reply("请输入set ChatGPT apiKey设置apiKey");
     if (!apiBaseUrl) return s.reply("请输入set ChatGPT apiBaseUrl设置apiBaseUrl");
-    if (!backendUrl) return s.reply("请输入set ChatGPT backendUrl 设置imgUrl，比如：http://xx:port/v1,结尾不要带/参考项目https://github.com/Ink-Osier/PandoraToV1Api");
-    //console.log(`param`, s.param(1));
-    const { ChatGPTAPI } = await import('chatgpt');
-    const platform = s.getFrom();
-    let api = {};
-    api = initializeChatGPTAPI(apiKey, apiBaseUrl, 'gpt-4');
     let opt = {
         timeoutMs: 60 * 1000,
     };
-    if (s.param(1) === '画图') {
-        await aiDraw();
-        return;
-    }
     if (s.param(1) === 'yy') {
         await aiSpeech(s.param(2));
         return;
@@ -100,70 +98,65 @@ module.exports = async s => {
                 await handleUserActions(ownPrompts, prompts);
             }
         }
-
         let prompt = ownPrompts[promptIndex];
         if (!prompt) {
             s.reply("对话结束。", name);
             return;
         }
         let history = [{
-            role: 'system', content: [{ type: "text", text: prompt.prompt + '，另外，输出字符限制，输出50-100字' }]
+            role: 'system', content: prompt.prompt + '，另外，输出字符限制，输出50-100字'
         }]
         s.reply(`Let me see...`);
-        history.push({ role: 'user', content: [{ type: "text", text: s.param(2) }] });
-        let response
+        history.push({ role: 'user', content: s.param(2) });
         try {
-            response = await api.sendMessage(JSON.stringify(history), opt);
-            console.log(response);
-            await handleResponse(response, history)
-            await continuousDialogue(api, opt);
+            let response = await fetchOpenAICompletions(gptAPI, history);
+            history.push({
+                role: 'assistant', content: response
+            });
+            s.reply(response);
+            await continuousDialogue(gptAPI);
         }
         catch (error) {
             handleError(error);
             //如果错误信息包含OpenAI error 429，使用gpt3.5模型继续调用
             if (error.toString().indexOf('OpenAI error 429') !== -1) {
                 s.reply("gpt4模型调用失败，正在使用gpt3.5模型");
-                api = initializeChatGPTAPI(apiKey, apiBaseUrl, 'gpt-3.5-turbo');
                 try {
-                    response = await api.sendMessage(JSON.stringify(history), opt);
-                    history.push({ role: 'assistant', content: [{ type: "text", text: response.text }] });
-                    console.log(response);
-                    await s.reply(response.text);
-                    await continuousDialogue(api, opt);
+                    let response = await fetchOpenAICompletions(gptAPI, history);
+                    history.push({ role: 'assistant', content: [{ type: "text", text: response }] });
+                    await s.reply(response);
+                    await continuousDialogue(gptAPI);
                 }
                 catch (error) {
                     handleError(error);
                     return;
                 }
-
             }
             return;
         }
-        async function continuousDialogue(api, opt) {
+        async function continuousDialogue(gptAPI) {
             while (true) {
                 let input = await s.waitInput(() => { }, 60);
                 if (!input) {
                     s.reply("对话超时。", name);
                     break;
                 }
-
                 input = input.getMsg();
                 if (input.toLowerCase() === 'q') {
                     s.reply("对话结束。", name);
                     break;
                 }
-
                 history.push({
-                    role: 'user', content: [{ type: "text", text: input }]
+                    role: 'user', content: input
                 });
-
                 let response;
                 try {
-                    response = await api.sendMessage(JSON.stringify(history), opt);
+                    response = await fetchOpenAICompletions(gptAPI, history);
                     if (response) {
-                        await handleResponse(response, history)
+                        history.push({ role: 'assistant', content: response });
+                        s.reply(response);
                     } else {
-                        s.reply("没有收到回答。", name);
+                        throw new Error('continuousDialogue error');
                     }
                 } catch (error) {
                     handleError(error);
@@ -171,30 +164,6 @@ module.exports = async s => {
                 }
             }
         }
-    }
-    async function aiDraw() {
-        const body = {
-            "model": "gpt-4-s",
-            prompt: `画图 ${s.param(2)}`
-        };
-        const auth = `Bearer ${apiKey}`;
-        try {
-            const response = await got.post(backendUrl + '/images/generations', {
-                json: body,
-                headers: {
-                    'Authorization': auth
-                }
-            });
-            let data = JSON.parse(response.body).data;
-            if (!data || !data[0] || !data[0].url) {
-                throw new Error(`Data validation error in response，${response.body}}`);
-            }
-            let dataUrl = data[0].url;
-            sendImg(platform, dataUrl)
-        } catch (error) {
-            handleError(error);
-        }
-        return;
     }
     async function aiSpeech(text) {
         const body = {
@@ -205,7 +174,7 @@ module.exports = async s => {
         }
         const auth = `Bearer ${apiKey}`;
         try {
-            const response = await got.post(backendUrl + '/audio/speech', {
+            const response = await got.post(apiBaseUrl + '/audio/speech', {
                 json: body,
                 headers: {
                     'Authorization': auth
@@ -213,40 +182,24 @@ module.exports = async s => {
                 responseType: 'buffer',
 
             });
-            console.log(response)
-            //获取响应acc音频
+            // console.log(response)
+            //获取响应mp3音频
             let rawBody = response.rawBody;
             if (!rawBody) {
                 throw new Error(`Data validation error in response，${response.body}}`);
             }
             let url = await handleAudioResponse(rawBody);
             sendAudio(platform, url)
+            let input = await s.waitInput(() => { }, 120);
+            //如果input=[group_recall]&operator_id=s.getUserId()，则撤回消息
+            if (input && input.getMsg() === '[group_recall]&operator_id=' + s.getUserId()) {
+                console.log('delinfo' + await s.delMsg());
+                s.reply(`${s.getUserName()}刚刚撤回了\n---\n${text}\n---`);
+            }
         } catch (error) {
             handleError(error);
         }
         return;
-    }
-    async function handleResponse(response, history) {
-        console.log(response);
-        if (isValidFormat(response.text)) {
-            const result = processText(response.text);
-            const link = result.link;
-            const lastLine = result.lastLine;
-            sendImg(platform, link);
-            history.push({
-                role: 'assistant', content: [{ type: "image_url", image_url: { url: link } }, { type: "text", text: lastLine }]
-            });
-            s.reply(lastLine + name);
-            return history;
-        }
-        else {
-            let text = removeUrls(response.text);
-            s.reply(text + name);
-            history.push({
-                role: 'assistant', content: [{ type: "text", text: text }]
-            });
-            return history;
-        }
     }
     async function handleUserActions(ownPrompts, prompts) {
         s.reply(`1.添加prompt \n2.删除prompt \n3.修改prompt \n4.查看prompt`);
@@ -376,77 +329,44 @@ module.exports = async s => {
             return;
         }
     }
-    function removeUrls(text) {
-        // 正则表达式匹配大多数网址格式
-        const urlRegex = /https?:\/\/[^\s]+|www\.[^\s]+/gi;
-        // 将所有匹配到的网址替换为空字符串
-        return text.replace(urlRegex, '');
-    }
-    function isValidFormat(text) {
-        // 正则表达式来检测文本格式
-        // 检测图像链接格式
-        const imageRegex = /!\[image\]\(https?:\/\/.*?\)/;
-        // 检测下载链接格式
-        const downloadLinkRegex = /\[下载链接\]\(https?:\/\/.*?\)/;
-
-        return imageRegex.test(text) && downloadLinkRegex.test(text);
-    }
-    function processText(text) {
-        // 将文本按行分割
-        const lines = text.split('\n');
-        // 初始化变量来存储链接和最后一行文本
-        let link = '';
-        let lastLine = '';
-        // 遍历每一行来查找链接
-        lines.forEach(line => {
-            if (line.includes('[下载链接]')) {
-                // 提取链接
-                const linkMatch = line.match(/\((.*?)\)/);
-                if (linkMatch && linkMatch.length > 1) {
-                    link = linkMatch[1];
-                }
-            }
-        });
-        // 获取最后一行文本
-        if (lines.length > 0) {
-            lastLine = lines[lines.length - 1];
-        }
-        return { link, lastLine };
-    }
     function initializeChatGPTAPI(apiKey, baseUrl, model) {
-        return new ChatGPTAPI({
+        return {
             apiKey: apiKey,
             apiBaseUrl: baseUrl,
             completionParams: {
                 model: model
             }
-        });
+        };
     }
-    async function handleInput(input) {
-        // if (platform === 'qq') {
-        // }
-        // else if (platform === 'ntqq') {
-        let regex = /http/g;
-        // 使用match()函数检查字符串是否包含匹配的URL
-        let matchedUrls = input.match(regex);
-        // 如果字符串包含匹配的URL，保存图片并发送
-        if (matchedUrls) {
-            //通过got获取图片并保存到本地
-            const { body } = await got.get(input, { responseType: 'buffer' });
-            const imgpath = path.join("/bncr/BncrData/public/", randomUUID() + '.png')
-            console.log(imgpath)
-            fs.writeFile(imgpath, body, (err) => {
-                if (err) {
-                    console.error('写入文件时出错:', err);
-                    return;
-                }
-            });
-            await sleep(1000)
-            let base64Img = imageToBase64(imgpath)
-            fs.unlinkSync(imgpath)
-            return base64Img;
-        } else {
-            return input;
+    async function fetchOpenAICompletions(gptAPI, messages, timeout = 30000) {
+        console.log(gptAPI.apiBaseUrl, gptAPI.completionParams.model, messages);
+        const fetchPromise = got.post(`${gptAPI.apiBaseUrl}/chat/completions`, {
+            json: {
+                model: gptAPI.completionParams.model,
+                messages: messages,
+                stream: false
+            },
+            responseType: 'json',
+            timeout: timeout
+        });
+
+        try {
+            const response = await fetchPromise;
+
+            if (response.statusCode !== 200) {
+                throw new Error(`HTTP error! status: ${response.statusCode}`);
+            }
+            console.log(response.body.choices[0].message);
+            const res = response.body.choices[0].message.content;
+            return res;
+        } catch (error) {
+            console.error(`Fetch error: ${error.message}`);
+            console.error(`Error stack: ${error.stack}`);
+            if (error.response) {
+                console.error(`Response status: ${error.response.statusCode}`);
+                console.error(`Response data: ${JSON.stringify(error.response.body, null, 2)}`);
+            }
+            return null;
         }
     }
     async function handleAudioResponse(response) {
@@ -470,20 +390,6 @@ module.exports = async s => {
         errorMessage = unicodeToChinese(errorMessage);
         s.reply("发生错误: " + errorMessage + name);
     }
-    function sendImg(platform, url) {
-        if (platform === 'qq') s.reply(`[CQ:image,file=${url}]`);
-        else if (platform === 'ntqq') {
-            const obj = {
-                platform: 'ntqq',
-                type: 'image',
-                msg: ``,
-                path: url,
-                groupId: s.getGroupId(),
-            }
-            //console.log(obj);
-            sysMethod.push(obj);
-        }
-    }
     function sendAudio(platform, url) {
         if (platform === 'qq') s.reply(`[CQ:record,file=${url}]`);
         else if (platform === 'ntqq') {
@@ -495,14 +401,13 @@ module.exports = async s => {
                 groupId: s.getGroupId(),
             }
             console.log(obj);
-            sysMethod.push(obj);
+            console.log(sysMethod.push(obj))
         }
     }
     function isUnicode(str) {
         // 正则表达式检查字符串是否包含Unicode转义序列
         return /\\u[\dA-F]{4}/i.test(str);
     }
-
     function unicodeToChinese(text) {
         // 将Unicode转义序列转换为普通字符串
         if (isUnicode(text)) {
@@ -511,20 +416,6 @@ module.exports = async s => {
             });
         } else {
             return text;
-        }
-    }
-    function imageToBase64(path) {
-        try {
-            // 读取文件到缓冲区
-            const imageBuffer = fs.readFileSync(path);
-
-            // 将缓冲区转换为 Base64 字符串
-            const base64Image = imageBuffer.toString('base64');
-
-            return base64Image;
-        } catch (error) {
-            handleError(error);
-            return null;
         }
     }
 };
