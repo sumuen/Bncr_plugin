@@ -347,7 +347,10 @@ module.exports = async s => {
                 stream: false
             },
             responseType: 'json',
-            timeout: timeout
+            timeout: timeout,
+            headers: {
+                'Authorization': `Bearer ${gptAPI.apiKey}`
+            }
         });
 
         try {
