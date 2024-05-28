@@ -1,5 +1,49 @@
 {
   "annotation": "该文件由系统自动生成. 用于插件市场索引,请勿编辑该文件中的任何内容",
+  "t4wcibkvdb6vxQ02ifP2hkA8gWg=": {
+    "type": "github",
+    "name": "ntqq_outside",
+    "author": "muzi",
+    "team": "muzi",
+    "version": "1.0.1",
+    "description": "外置ntqq机器人适配器",
+    "classification": [
+      "adapter"
+    ],
+    "filename": "ntqq_outside.js",
+    "fileDir": "/Adapter/ntqq_outside.js",
+    "systemVersionRange": "",
+    "isCron": false,
+    "isAdapter": true,
+    "isMod": false,
+    "isService": false,
+    "isAuthentication": false,
+    "isEncPlugin": false,
+    "id": "t4wcibkvdb6vxQ02ifP2hkA8gWg=",
+    "isChatPlugin": false
+  },
+  "Pzx4TUiyJdoY7hkj1xGOcYm8vBQ=": {
+    "type": "github",
+    "name": "pgm",
+    "author": "YuanKK",
+    "team": "空中楼阁",
+    "version": "1.0.0",
+    "description": "pgm适配器",
+    "classification": [
+      "adapter"
+    ],
+    "filename": "pgm.js",
+    "fileDir": "/Adapter/pgm.js",
+    "systemVersionRange": "",
+    "isCron": false,
+    "isAdapter": true,
+    "isMod": false,
+    "isService": false,
+    "isAuthentication": false,
+    "isEncPlugin": false,
+    "id": "Pzx4TUiyJdoY7hkj1xGOcYm8vBQ=",
+    "isChatPlugin": false
+  },
   "6zLezEto8/N8gtcYd+UlGpXtMuo=": {
     "type": "github",
     "name": "Bncr_ChatGPT",
