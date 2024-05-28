@@ -1,15 +1,17 @@
 /**
  * @author muzi
- * @name 浇水
- * @origin Adapted from jd_fruit_task，ck查找抄的红灯区查询
+ * @name water
+ * @team Adapted from jd_fruit_task，ck查找抄的红灯区查询
  * @version 1.0.0
  * @description 浇水
  * @rule ^浇水$
  * @rule ^js$
  * @admin false
- * @public false
+ * @public true
  * @priority 100
  * @disable false
+ * @systemVersion >=:2.0.5
+ * @classification ["jd"]
  */
 module.exports = async (s) => {
     /* 检测模块并安装 */

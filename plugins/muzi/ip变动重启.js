@@ -1,14 +1,16 @@
 /**
  * @author muzi
- * @name ip变动重启bncr以及docker
- * @origin muzi
+ * @name ip变动重启
+ * @team muzi
  * @version 1.1.1
  * @description ip变动重启for双拨，多拨，需要在bncr容器中安装docker，apk add --no-cache docker-cli并重启容器，我是为了重启外部qq,go-cqhttp容器，所以重启go-cqhttp容器，如果你的qq容器名不是go-cqhttp，那么请自行修改
  * @rule ^ip$
  * @priority 1000
  * @admin false
- * @public false
+ * @public true
  * @disable false
+ * @systemVersion >=:2.0.5
+ * @classification ["ip"]
  * @cron 0 *\/1 * * * *
  */
 const { addMinutes, isPast } = require('date-fns')
@@ -43,6 +45,11 @@ function restartContainer(containerNameOrId) {
 }
 //主程序
 module.exports = async (s) => {
+  let platform = await s.getFrom()
+  if (!platform) {
+    console.log('未获取到平台信息，不执行')
+  }
+  console.log(platform)
   // 获取数据库中的数据
   const v4DB = (await sysDB.get("publicIpv4")) || []; //获取数据库中的ip
   const deletedIps = (await sysDB.get("deletedIps")) || [];
@@ -51,9 +58,9 @@ module.exports = async (s) => {
   const lastRestartTimeString = await sysDB.get(lastRestartTimeKey)
   const lastRestartTime = lastRestartTimeString ? new Date(lastRestartTimeString) : null
   const now = new Date()
-  let logs = `上次ip:${(lastCheckedIp && AmTool.Masking(lastCheckedIp, 5, 6)) || "空"
+  let logs = `上次ip:${(lastCheckedIp && AmTool.Masking(lastCheckedIp, 3, 6)) || "空"
     }\n`;
-  logs += `本次ip:${(nowV4ip && AmTool.Masking(nowV4ip, 5, 6)) || "空"}\n`;
+  logs += `本次ip:${(nowV4ip && AmTool.Masking(nowV4ip, 3, 6)) || "空"}\n`;
   let open = false;
 
   if (nowV4ip === null) {
@@ -85,7 +92,7 @@ module.exports = async (s) => {
           //将当前IP添加到v4DB
           await sysDB.set("publicIpv4", v4DB); //保存到数据库
         } else {
-          logs += "进行bncr与docker重启...";
+          logs += "进行bncr重启...";
           open = true;
           await sysDB.set(lastRestartTimeKey, now.toString())
 
@@ -96,7 +103,7 @@ module.exports = async (s) => {
             deletedIps.push(removedIp);
             await sysDB.set("deletedIps", deletedIps);
           }
-          restartContainer("go-cqhttp");
+          //restartContainer("go-cqhttp");
           v4DB.push(nowV4ip);
           //将当前IP添加到v4DB
           await sysDB.set("publicIpv4", v4DB); //保存到数据库

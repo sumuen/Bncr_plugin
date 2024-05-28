@@ -2,15 +2,17 @@
  * @name Madrabbit短信登录
  * @rule ^(登录|登陆|dl)$
  * @author HermanWu
- * @origin HW
+ * @team HW
  * @version v1.0.0
  * @create_at 2021-12-02 12:12:12
  * @description Qrabbit短信登录，通过短信登陆新设备，抓取wsck
  * @priority 10000
  * @admin false
  * @platform wx pgm tg web qq ntqq
- * @public false
+ * @public true
  * @disable false
+ * @systemVersion >=:2.0.5
+ * @classification ["jd"]
  */
 module.exports = async (s) => {
     const { randomUUID } = require('crypto');
@@ -34,24 +36,6 @@ module.exports = async (s) => {
             s.reply("Madrabbit对接地址为空  请先对接  指令: set RabbitPro addr http://123.123.123.123:12345")
             return
         }
-        // const { question, answer, includeSquare } = generateMathQuestion();
-        // if (group_id.length > 2) {
-        //     let waitime = (includeSquare !== 0) ? 12 : 8
-        //     s.reply(`请在${waitime}s内完成：${question}`)
-        //     const answerInput = await s.waitInput(() => { }, waitime);
-        //     const answerInputStr = answerInput == null ? "" : answerInput.getMsg()
-        //     console.log(answerInputStr);
-        //     if (answerInput == null) {
-        //         s.reply("超时,已退出")
-        //         return
-        //     } else if (answerInputStr == "q" || answerInputStr == "Q") {
-        //         s.reply("好难不会做，呜呜呜")
-        //         return
-        //     } else if (answerInputStr !== answer.toString()) {
-        //         s.reply(`答错了，正确答案是${answer}不行看看脑子吧`)
-        //         return
-        //     }
-        // }
         s.reply("请输入选项：\n1.扫🐴登录\n2.短信💡撸")
         const option = await s.waitInput(() => { }, 60);
         const optionstr = option.getMsg()
@@ -202,7 +186,7 @@ module.exports = async (s) => {
         console.log(QRCodeKey);
         let qrdata = Buffer.from(qr, 'base64')
         const qrpath = path.join("/bncr/BncrData/public/", randomUUID() + ".png")
-        const hostURL = qrpath.replace("/bncr/BncrData/public/", "http://192.168.3.6:9090/public/");//改成你的网页地址
+        const hostURL = qrpath.replace("/bncr/BncrData/public/", "http://127.0.0.1:9090/public/");//改成你的网页地址
         fs.writeFile(qrpath, qrdata, function (err) {
             if (err) {
                 console.log(err);

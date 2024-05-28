@@ -1,20 +1,20 @@
 /**
  * @author sumuen
  * @name Bncr_ChatGPT
- * @origin sumuen
+ * @team sumuen
  * @version 1.2.0
  * @description ChatGpt聊天 借助于chatgpt模块，增加tts功能
  * @rule ^(ai) ([\s\S]+)$
  * @rule ^(ai)$
  * @rule ^(yy) ([\s\S]+)$
  * @admin false
- * @public false
+ * @public true
  * @priority 10
  * @platform ntqq qq
  * @disable false
+ * @systemVersion >=:2.0.5
+ * @classification ["ai","gpt"]
  */
-
-const { Stream } = require('stream');
 
 /* 
 默认使用gpt3.5模型，见55行，如果gpt4模型调用失败，使用gpt3.5模型继续调用

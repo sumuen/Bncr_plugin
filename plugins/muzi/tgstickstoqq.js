@@ -1,15 +1,19 @@
 /**
  * @author muzi
- * @name convert tg sticks to qq 
+ * @name tgstickstoqq
  * @description docker exec bncr -it /bin/sh apk add ffmpeg
  * @rule ^sticks$
  * @rule ^(sticks) ([\s\S]+)$
  * @version 1.0.0
  * @priority 100001
  * @admin false
- * @origin muzi
+ * @team muzi
+ * @platform wx pgm tg web qq ntqq
  * @disable false
- */
+ * @systemVersion >=:2.0.5
+ * @classification ["表情“]
+ * @public true
+*/
 const got = require('got');
 const path = require('path');
 const fs = require('fs').promises;

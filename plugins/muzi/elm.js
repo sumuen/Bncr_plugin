@@ -1,6 +1,6 @@
 /**
  * @author muzi
- * @name elmck
+ * @name elm
  * @description elmck
  * @rule ^elm$
  * @rule ^(elm)([0-9]+)$
@@ -17,9 +17,12 @@
  * @version 1.0.9
  * @priority 100001
  * @admin false
- * @origin muzi
+ * @team muzi
  * @disable false
+ * @systemVersion >=:2.0.5
+ * @classification ["elm"]
  * @cron 0 0 9,21 * * *
+ * @public true
  */
 const validator = require("validator")
 const got = require('got');
@@ -68,7 +71,7 @@ module.exports = async (s) => {
             qlconfigFunction();
             break;
         case "qlsync":
-            qlsyncFunction("elmqqck", "ql0", "ql1");
+            qlsyncFunction("elmck", "1697731480559", "1697770420885");
             break;
         case "elmcron":
             executeCronTask();
@@ -107,13 +110,13 @@ module.exports = async (s) => {
                     if (env.length > 0) { // 如果找到了匹配的环境变量
                         for (let i = 0; i < env.length; i++) {
                             await sleep(100);
-                            console.log(`${env[i].value}`);
+                            //console.log(`${env[i].value}`);
                             globalEnv.push(env[i]);
                         }
                         return env;
                     } else {
                         console.log(`未查询到环境变量：${envName}`);
-                        return;
+                        return [];
                     }
                 } else {
                     console.log("查询环境变量失败")
@@ -320,6 +323,8 @@ module.exports = async (s) => {
             }
         }
     }
+    //测试青龙配置是否正确
+    await testToken()
     async function qlinitialization() {
         if (!await s.isAdmin()) {
             s.reply("未配置青龙面板，请联系管理员配置");
@@ -390,6 +395,8 @@ module.exports = async (s) => {
                         modified = true; // 标记为已修改
                     }
                     let envs = await client.searchEnv('elmck');
+                    if (!envs) envs = [];
+
                     let envInfo = envFindId(envs, elmck);
                     //console.log(envInfo);
                     //console.log(`${userId}+${responseBody.mobile}`)
@@ -402,15 +409,18 @@ module.exports = async (s) => {
                     }
                 }
                 if (!responseBody) {
+                    let envs = await client.searchEnv('elmck');
+                    if (!envs) envs = [];
+                    let envInfo = envFindId(envs, elmck);
                     account.ban = (account.ban || 0) + 1;;
                     if (index > -1 && account.ban > 3) {
                         userInfo.accounts.splice(index, 1);
-                        client.delEnv(envInfo[0])
+                        if (envInfo) client.delEnv(envInfo[0])
                     }
                     modified = true;
-                    console.log(index, userInfo.accounts)
+                    //console.log(index, userInfo.accounts)
                     console.log(`账号 ${account.username} 的 Cookie 已失效`);
-                    await client.disableEnv(envInfo[0]);
+                    if (envInfo) await client.disableEnv(envInfo[0]);
                     senders.forEach(e => {
                         let obj = {
                             platform: keyPlatform,  // Use the platform extracted from the key
@@ -478,71 +488,72 @@ module.exports = async (s) => {
     }
     //newelmqq
     async function newelmqqFunction() {
-        //查找账户
-        let userInfo = await getUserInfo();
+        s.reply("暂停使用");
+        // //查找账户
+        // let userInfo = await getUserInfo();
 
-        if (userInfo) {
-            let accountList = [];
+        // if (userInfo) {
+        //     let accountList = [];
 
-            //获取抢券容器
-            let qlNames = await getSpecificQLnames("elmqq");
-            const allEnvs = await getAllEnvsFromQLs(qlNames);
-            const mergedEnvs = mergeAndDeduplicateEnvs(allEnvs);
-            await supplementEnvs(allEnvs, mergedEnvs);
-            generateAccountListFromMergedEnvs(mergedEnvs);
-            // 遍历每一个账户，并获取其 elmck
-            for (let index = 0; index < userInfo.accounts.length; index++) {
-                const account = userInfo.accounts[index];
-                const username = account.username;
-                if (account.coupon === true) {
-                    let logMessage = `编号：${index}，账户：${username}, 状态：已抢券\n`;
-                    accountList.push(logMessage);
-                } else {
-                    let logMessage = `编号：${index}，账户：${username}状态：未抢券\n`;
-                    accountList.push(logMessage);
-                }
-            }
-            s.reply("账户列表：\n" + accountList.join('') + '\n' + "请输入编号进行抢券设置，q退出");
-            //等待用户输入编号选择账号进行操作
-            let input = await s.waitInput(() => { }, 60);
-            let accountIndex = parseInt(input.getMsg(), 10);
-            if (isNaN(accountIndex) || accountIndex < 0 || accountIndex >= userInfo.accounts.length) {
-                s.reply("输入的编号无效");
-                return;
-            }
-            let selectedAccount = userInfo.accounts[accountIndex];
-            // let coupon = selectedAccount.coupon
-            console.log(selectedAccount.coupon);
-            if (selectedAccount.coupon === true) {
-                selectedAccount.coupon = false
-            } else {
-                selectedAccount.coupon = true
-            }
-            await usrDb.set(platform + ':' + userId, userInfo);
-            let selectedElmck = selectedAccount.elmck;
-            for (const qlName of qlNames) {
-                const config = await getqlconfig(qlName);
-                const client = new QLClient(config);
-                let envs = await client.searchEnv('elmqqck');
-                let matchedEnv = envs ? envs.find((env) => env.value === selectedElmck) : null;
+        //     //获取抢券容器
+        //     let qlNames = await getSpecificQLnames("elmqq");
+        //     const allEnvs = await getAllEnvsFromQLs(qlNames);
+        //     const mergedEnvs = mergeAndDeduplicateEnvs(allEnvs);
+        //     await supplementEnvs(allEnvs, mergedEnvs);
+        //     generateAccountListFromMergedEnvs(mergedEnvs);
+        //     // 遍历每一个账户，并获取其 elmck
+        //     for (let index = 0; index < userInfo.accounts.length; index++) {
+        //         const account = userInfo.accounts[index];
+        //         const username = account.username;
+        //         if (account.coupon === true) {
+        //             let logMessage = `编号：${index}，账户：${username}, 状态：已抢券\n`;
+        //             accountList.push(logMessage);
+        //         } else {
+        //             let logMessage = `编号：${index}，账户：${username}状态：未抢券\n`;
+        //             accountList.push(logMessage);
+        //         }
+        //     }
+        //     s.reply("账户列表：\n" + accountList.join('') + '\n' + "请输入编号进行抢券设置，q退出");
+        //     //等待用户输入编号选择账号进行操作
+        //     let input = await s.waitInput(() => { }, 60);
+        //     let accountIndex = parseInt(input.getMsg(), 10);
+        //     if (isNaN(accountIndex) || accountIndex < 0 || accountIndex >= userInfo.accounts.length) {
+        //         s.reply("输入的编号无效");
+        //         return;
+        //     }
+        //     let selectedAccount = userInfo.accounts[accountIndex];
+        //     // let coupon = selectedAccount.coupon
+        //     console.log(selectedAccount.coupon);
+        //     if (selectedAccount.coupon === true) {
+        //         selectedAccount.coupon = false
+        //     } else {
+        //         selectedAccount.coupon = true
+        //     }
+        //     await usrDb.set(platform + ':' + userId, userInfo);
+        //     let selectedElmck = selectedAccount.elmck;
+        //     for (const qlName of qlNames) {
+        //         const config = await getqlconfig(qlName);
+        //         const client = new QLClient(config);
+        //         let envs = await client.searchEnv('elmqqck');
+        //         let matchedEnv = envs ? envs.find((env) => env.value === selectedElmck) : null;
 
-                if (matchedEnv) {
-                    // 如果ck存在且状态为禁用，则启用之
-                    if (matchedEnv.status === 1) {
-                        await client.enablEnv(matchedEnv._id);
-                    }
-                    // 如果ck存在且状态为启用，则禁用之
-                    else {
-                        await client.disableEnv(matchedEnv._id);
-                    }
-                } else {
-                    // 如果ck不存在，则添加之
-                    await client.addEnv('elmqqck', selectedElmck, selectedAccount.username);
-                }
-            }
+        //         if (matchedEnv) {
+        //             // 如果ck存在且状态为禁用，则启用之
+        //             if (matchedEnv.status === 1) {
+        //                 await client.enablEnv(matchedEnv._id);
+        //             }
+        //             // 如果ck存在且状态为启用，则禁用之
+        //             else {
+        //                 await client.disableEnv(matchedEnv._id);
+        //             }
+        //         } else {
+        //             // 如果ck不存在，则添加之
+        //             await client.addEnv('elmqqck', selectedElmck, selectedAccount.username);
+        //         }
+        //     }
 
-            s.reply(`账号${selectedAccount.username}的设置已更新`);
-        }
+        //     s.reply(`账号${selectedAccount.username}的设置已更新`);
+        // }
 
     }
     //getAllEnvsFromQLs
@@ -657,7 +668,12 @@ module.exports = async (s) => {
                     userInfo.accounts.push({ elmck, username });
                     await usrDb.set(platform + ':' + userId, userInfo);
                 }
-
+                //如果username存在于数据库中，但是elmck不存在于数据库中，则删除username对应的elmck，添加新的elmck
+                if (existingAccount) {
+                    userInfo.accounts.splice(userInfo.accounts.findIndex(acc => acc.username === username), 1);
+                    userInfo.accounts.push({ elmck, username });
+                    await usrDb.set(platform + ':' + userId, userInfo);
+                }
                 if (isExistingInAnyContainer) {
                     s.reply(username + "的 cookie 已存在");
                 } else if (isAddedInAnyContainer) {
@@ -826,6 +842,7 @@ module.exports = async (s) => {
                         s.reply("请输入host");
                         let inputA = await s.waitInput(() => { }, 20) ?? s.reply('超时,已退出');
                         let inputstrA = inputA.getMsg();
+                        const urlRegEx = /^https?:\/\/([a-zA-Z0-9-.]+(:[0-9]{1,5})?)(\/)?$/;
                         if (validator.isURL(inputstrA)) {
                             // 提取URL主体部分
                             let match = inputstrA.match(urlRegEx);
@@ -923,7 +940,7 @@ module.exports = async (s) => {
                     const token = result.data.token;
                     // 更新容器的token
                     container.token = token;
-                    console.log(`ql${name}查询青龙接口成功`);
+                    console.log(`ql${name}更新青龙接口成功`);
                 } else {
                     console.log(`查询青龙接口失败: ${result.message}`);
                 }
@@ -935,6 +952,26 @@ module.exports = async (s) => {
         // 保存所有更新后的容器到数据库
         await qldb.set("ql", containers);
     }
+    //测试青龙接口
+    async function testToken() {
+        const containers = await qldb.get("ql"); // 直接从'ql'键获取所有容器
+        if (!containers || !Array.isArray(containers)) {
+            console.error("No containers found or invalid format");
+            return;
+        }
+        for (const container of containers) {
+            console.log("正在测试青龙接口");
+            const client = new QLClient(container);
+            try {
+                let envs = await client.searchEnv('elmck');
+                if (envs) return true;
+            } catch (error) {
+                console.error(error);
+                getToken();
+            }
+        }
+    }
+
     function populateOptions(url, auth, body = '') {
         let options = {
             url: url,
@@ -964,7 +1001,7 @@ module.exports = async (s) => {
         try {
             const response = await got(options);
             const responseBody = JSON.parse(response.body);
-            console.log(response.body)
+            //console.log(response.body)
             return responseBody;
         } catch (error) {
             const errorBody = JSON.parse(error.response.body);
@@ -996,13 +1033,16 @@ module.exports = async (s) => {
             const responseBody = JSON.parse(response.body);
             let username = responseBody.username;
             let phone = responseBody.mobile;
+            if (phone === null) {
+                phone = "00000000000";
+            }
             s.reply(`${username} 后四位：${(AmTool.Masking(phone, 0, 4))}`);
-            console.log(response.body);
+            //console.log(response.body);
             // 检查环境变量的状态，如果它被禁用，则启用它
             let envs = await client.searchEnv('elmck');
             let envInfo = envFindId(envs, cookie);
-            console.log(envInfo);
-            if (envInfo &&envInfo[1] === 1) {
+            //console.log(envInfo);
+            if (envInfo && envInfo[1] === 1) {
                 console.log("启用环境变量");
                 await client.enablEnv(envInfo[0]);
             } else if (!envInfo) {
@@ -1011,6 +1051,7 @@ module.exports = async (s) => {
             }
         } catch (error) {
             console.log(`catch error: ${error.message}`)
+            if (!error.response) await getToken()
             const errorBody = error.response.body;
             console.log(errorBody);
             console.log(typeof errorBody);
@@ -1075,6 +1116,10 @@ module.exports = async (s) => {
         let cookie2Match = str.match(/cookie2=[^;]*/);
         let userid = str.match(/USERID=[^;]*/);
         let unb = str.match(/unb=[^;]*/);
+        let token = str.match(/token=[^;]*/);
+        let umt = str.match(/umt=[^;]*/);
+        let utdid = str.match(/utdid=[^;]*/);
+        let deviceId = str.match(/deviceId=[^;]*/);
         let result = '';
         let missing = '';
 
@@ -1083,11 +1128,6 @@ module.exports = async (s) => {
         } else {
             missing += 'SID is missing. ';
         }
-        if (cookie2Match) {
-            result += cookie2Match[0] + ';';
-        } else {
-            missing += 'cookie2 is missing. ';
-        }
         if (userid) {
             result += userid[0] + ';';
         } else {
@@ -1095,11 +1135,29 @@ module.exports = async (s) => {
         }
         if (unb) {
             result += unb[0] + ';';
+        }
+        if (token) {
+            result += token[0] + ';';
+        }
+        if (cookie2Match) {
+            result += cookie2Match[0] + ';';
         } else {
-            missing += 'unb is missing.'
+            missing += 'cookie2 is missing. ';
+        }
+        if (umt) {
+            result += umt[0] + ';';
+        }
+        if (utdid) {
+            result += utdid[0] + ';';
+        }
+        if (deviceId) {
+            result += deviceId[0] + ';';
         }
         if (missing === '') {
-            //s.reply(result);
+            if(unb&&token&&umt&&utdid&&deviceId){
+                console.log("当前ck识别为appck，尝试进行自动续期");
+                s.reply(`当前ck识别为appck，尝试进行自动续期`)
+            }
             return result;
         } else {
             s.reply(missing);
