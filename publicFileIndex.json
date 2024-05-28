@@ -1,0 +1,158 @@
+{
+  "annotation": "该文件由系统自动生成. 用于插件市场索引,请勿编辑该文件中的任何内容",
+  "6zLezEto8/N8gtcYd+UlGpXtMuo=": {
+    "type": "github",
+    "name": "Bncr_ChatGPT",
+    "author": "sumuen",
+    "team": "sumuen",
+    "version": "1.2.0",
+    "description": "ChatGpt聊天 借助于chatgpt模块，增加tts功能",
+    "classification": [
+      "ai",
+      "gpt"
+    ],
+    "filename": "Bncr_ChatGPT.js",
+    "fileDir": "/plugins/muzi/Bncr_ChatGPT.js",
+    "systemVersionRange": "",
+    "isCron": false,
+    "isAdapter": false,
+    "isMod": false,
+    "isService": false,
+    "isAuthentication": false,
+    "isEncPlugin": false,
+    "id": "6zLezEto8/N8gtcYd+UlGpXtMuo=",
+    "isChatPlugin": true
+  },
+  "3qyCJ1ztNrzFdyzgQEjJwhO3zak=": {
+    "type": "github",
+    "name": "elm",
+    "author": "muzi",
+    "team": "muzi",
+    "version": "1.0.9",
+    "description": "elmck",
+    "classification": [
+      "elm"
+    ],
+    "filename": "elm.js",
+    "fileDir": "/plugins/muzi/elm.js",
+    "systemVersionRange": "",
+    "isCron": false,
+    "isAdapter": false,
+    "isMod": false,
+    "isService": false,
+    "isAuthentication": false,
+    "isEncPlugin": false,
+    "id": "3qyCJ1ztNrzFdyzgQEjJwhO3zak=",
+    "isChatPlugin": true
+  },
+  "n6LFAe2hAW5Y0n9Sv3fwTPZEadU=": {
+    "type": "github",
+    "name": "id",
+    "author": "muzi",
+    "team": "muzi",
+    "version": "1.1.0",
+    "description": "获取用户id",
+    "classification": [
+      "插件"
+    ],
+    "filename": "id.js",
+    "fileDir": "/plugins/muzi/id.js",
+    "systemVersionRange": "",
+    "isCron": false,
+    "isAdapter": false,
+    "isMod": false,
+    "isService": false,
+    "isAuthentication": false,
+    "isEncPlugin": false,
+    "id": "n6LFAe2hAW5Y0n9Sv3fwTPZEadU=",
+    "isChatPlugin": true
+  },
+  "6tDjEwOymXIsBAWlQ7mXLIInllw=": {
+    "type": "github",
+    "name": "ip变动重启",
+    "author": "muzi",
+    "team": "muzi",
+    "version": "1.1.1",
+    "description": "ip变动重启for双拨，多拨，需要在bncr容器中安装docker，apk add --no-cache docker-cli并重启容器，我是为了重启外部qq,go-cqhttp容器，所以重启go-cqhttp容器，如果你的qq容器名不是go-cqhttp，那么请自行修改",
+    "classification": [
+      "ip"
+    ],
+    "filename": "ip变动重启.js",
+    "fileDir": "/plugins/muzi/ip变动重启.js",
+    "systemVersionRange": "",
+    "isCron": false,
+    "isAdapter": false,
+    "isMod": false,
+    "isService": false,
+    "isAuthentication": false,
+    "isEncPlugin": false,
+    "id": "6tDjEwOymXIsBAWlQ7mXLIInllw=",
+    "isChatPlugin": true
+  },
+  "pmIKqnwEayKkVMYD3WRi6/2nkOM=": {
+    "type": "github",
+    "name": "madrabbit",
+    "author": "HermanWu",
+    "team": "HW",
+    "version": "v1.0.0",
+    "description": "Qrabbit短信登录，通过短信登陆新设备，抓取wsck",
+    "classification": [
+      "jd"
+    ],
+    "filename": "madrabbit.js",
+    "fileDir": "/plugins/muzi/madrabbit.js",
+    "systemVersionRange": "",
+    "isCron": false,
+    "isAdapter": false,
+    "isMod": false,
+    "isService": false,
+    "isAuthentication": false,
+    "isEncPlugin": false,
+    "id": "pmIKqnwEayKkVMYD3WRi6/2nkOM=",
+    "isChatPlugin": true
+  },
+  "srVi9ZLCC2mKj0Wy3KvgCUiR9tQ=": {
+    "type": "github",
+    "name": "pixel_spy",
+    "author": "muzi",
+    "team": "muzi",
+    "version": "v1.0.0",
+    "description": "pixelSPY",
+    "classification": [
+      "crypto"
+    ],
+    "filename": "pixel_spy.js",
+    "fileDir": "/plugins/muzi/pixel_spy.js",
+    "systemVersionRange": "",
+    "isCron": false,
+    "isAdapter": false,
+    "isMod": false,
+    "isService": false,
+    "isAuthentication": false,
+    "isEncPlugin": false,
+    "id": "srVi9ZLCC2mKj0Wy3KvgCUiR9tQ=",
+    "isChatPlugin": true
+  },
+  "Ht3XOWOhb3IFoeJiErxZICF+SUo=": {
+    "type": "github",
+    "name": "water",
+    "author": "muzi",
+    "team": "Adapted from jd_fruit_task，ck查找抄的红灯区查询",
+    "version": "1.0.0",
+    "description": "浇水",
+    "classification": [
+      "jd"
+    ],
+    "filename": "water.js",
+    "fileDir": "/plugins/muzi/water.js",
+    "systemVersionRange": "",
+    "isCron": false,
+    "isAdapter": false,
+    "isMod": false,
+    "isService": false,
+    "isAuthentication": false,
+    "isEncPlugin": false,
+    "id": "Ht3XOWOhb3IFoeJiErxZICF+SUo=",
+    "isChatPlugin": true
+  }
+}
