@@ -2,7 +2,7 @@
  * This file is part of the App project.
  * @author YuanKK
  * @name pgm
- * @origin 空中楼阁
+ * @team 空中楼阁
  * @version 1.0.0
  * @description pgm适配器
  * @adapter true

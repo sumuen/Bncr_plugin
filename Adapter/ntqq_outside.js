@@ -1,7 +1,7 @@
 /**
  * @author muzi
  * @name ntqq
- * @origin muzi
+ * @team muzi
  * @version 1.0.1
  * @description 外置ntqq机器人适配器
  * @adapter true
