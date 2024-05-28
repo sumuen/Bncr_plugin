@@ -27,7 +27,7 @@
 sticks
 ```
 
-![image-20231214212732704](http://easyimage.muzi.studio/i/2023/12/14/z6krlb-0.png)
+![image-20231214212732704](http://easyimage.sumuen.gq/i/2023/12/14/z6krlb-0.png)
 
 ```js
 s.reply('请使用tg对机器人发送sticks获取绑定码');
