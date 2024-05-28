@@ -5,9 +5,11 @@
  * @version 1.0.1
  * @description 外置ntqq机器人适配器
  * @adapter true
- * @public false
+ * @public true
  * @disable false
  * @priority 100
+ * @systemVersion >=:2.0.5
+ * @classification ["adapter"]
  */
 /* 配置构造器 */
 const jsonSchema = BncrCreateSchema.object({

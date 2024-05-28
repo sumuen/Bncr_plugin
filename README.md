@@ -1,3 +1,9 @@
+# Bncr_plugins
+
+> [!IMPORTANT]
+>
+> 本库已适配3.0，订阅链接 https://github.com/sumuen/Bncr_plugin
+
 本库为自用的[无界](https://github.com/Anmours/Bncr)插件
 
 包含适配**NTQQ**项目[Lagrange.Core](https://github.com/LagrangeDev/Lagrange.Core)的适配器与一些**插件**，旧提交的代码可能难以阅读但肯定可以正常运行，完全开源随便二改，感谢Bncr群组的所有朋友们
@@ -17,7 +23,9 @@
 
 实现telegram表情到qq的一对一发送，支持单个表情与表情包内全部表情
 
-`sticks` 
+```
+sticks
+```
 
 ![image-20231214212732704](http://easyimage.muzi.studio/i/2023/12/14/z6krlb-0.png)
 
@@ -71,18 +79,6 @@ s.reply('1:进入连续发送模式\n2:发送贴纸包全部贴纸\nq:退出')
 
 `water`: 根据奶酪棒中绑定的账号查询默认青龙中账号对应的ck进行单线程随机延迟浇水操作
 
-## x5sec.js
-
-监听x5sec信息，同步到青龙并运行特级厨师与魔方两个任务
-
-## jd过期推送.js
-
-检测到过期ck后，推送给qq个人，删除pin
-
-## 高格重拨.js
-
-重播高格路由器，需要手动改一下Url，改成你自己的
-
 ### ip变动重启.js
 
 *ip变动重启for双拨，多拨，需要在bncr容器中安装docker，apk add --no-cache docker-cli并重启容器，我是为了重启外部qq,go-cqhttp容器，所以重启go-cqhttp容器，如果你的qq容器名不是go-cqhttp，那么请自行修改*
@@ -91,17 +87,7 @@ s.reply('1:进入连续发送模式\n2:发送贴纸包全部贴纸\nq:退出')
 
 其实是适配rabbitpro的脚本，适配了短信登录和扫码登录
 
-## 抽奖.js
 
-娱乐脚本，管理员输入抽奖开后，输入1即可参与抽奖
-
-## docker.js
-
-玩具脚本，实现docker的一些命令
-
-*docker (ps|start|restart|stop|update|attach)( (\w+))*
-
-![image-20231210213409772](http://easyimage.muzi.studio/i/2023/12/10/zalrzb-0.png)
 
 
 
@@ -116,6 +102,10 @@ s.reply('1:进入连续发送模式\n2:发送贴纸包全部贴纸\nq:退出')
 ## 4.7
 
 更新ntqq适配器，增加语音，更新gpt插件，增加openai tts,适配[pandora](https://linux.do/t/topic/49556/219)
+
+## 5.29
+
+更新适配3.0.0
 
 ## Star History
 

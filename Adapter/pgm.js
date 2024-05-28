@@ -6,9 +6,11 @@
  * @version 1.0.0
  * @description pgm适配器
  * @adapter true
- * @public false
+ * @public true
  * @disable false
  * @priority 3
+ * @systemVersion >=:2.0.5
+ * @classification ["adapter"]
  */
 
 module.exports = async () => {
